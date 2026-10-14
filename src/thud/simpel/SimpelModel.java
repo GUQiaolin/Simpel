@@ -17,7 +17,7 @@ public class SimpelModel
 	  //TODO utilize kdown, ldown, wind speed, now available in Global_Input
 	  //TODO, Use timestep values, Hourly value for timestep now configured in Soil_physics: Timestep;24;
 	
-	private String directory = "/home/kerryn/git/2023-06-SimpelSoilWaterModels/SIMPLE/";
+	private String directory;
 	
 	public final static int PRECIPITATION=0; 
 	public final static int SNOW_WATER_EQUI=1; 
@@ -114,11 +114,12 @@ public class SimpelModel
 	public static void main(String[] args)
 	{
 		SimpelModel s = new SimpelModel();
-		if (args.length>0)
+		if (args.length<1)
 		{
-			String arg0 = args[0];
-			s.setDirectory(arg0);
+			System.err.println("Usage: java thud.simpel.SimpelModel <input directory> [readET|dontReadET]");
+			System.exit(1);
 		}
+		s.setDirectory(args[0]);
 		if (args.length>1)
 		{
 			String arg1 = args[1];
@@ -129,20 +130,20 @@ public class SimpelModel
 	
 	public void process()
 	{
-		ArrayList<String[]> Input = readLargerTextFileAlternateToArray(directory + "Global_Input.txt", true, "\\s+",false);
-		ArrayList<String[]> InputHeader = readLargerTextFileAlternateToArray(directory + "Global_Input.txt", false, "\\s+",true);
+		ArrayList<String[]> Input = readLargerTextFileAlternateToArray(Paths.get(directory, "Global_Input.txt").toString(), true, "\\s+",false);
+		ArrayList<String[]> InputHeader = readLargerTextFileAlternateToArray(Paths.get(directory, "Global_Input.txt").toString(), false, "\\s+",true);
 		matchInputHeaders(InputHeader);
-		ArrayList<String[]> Landuse = readLargerTextFileAlternateToArray(directory + "Land_Use.txt", true, "\\s+",false);
-		ArrayList<String[]> Landuses = readLargerTextFileAlternateToArray(directory + "Land_Use.txt", false, "\\s+",false);
+		ArrayList<String[]> Landuse = readLargerTextFileAlternateToArray(Paths.get(directory, "Land_Use.txt").toString(), true, "\\s+",false);
+		ArrayList<String[]> Landuses = readLargerTextFileAlternateToArray(Paths.get(directory, "Land_Use.txt").toString(), false, "\\s+",false);
 		String[] landusesHeader = Landuses.get(0);
 		TreeMap<String,Integer> landusesIndexes = new TreeMap<String,Integer>();
 		for (int i=1;i<landusesHeader.length;i++)
 		{
 			landusesIndexes.put( landusesHeader[i], i);
 		}
-		ArrayList<String[]> LAI_model = readLargerTextFileAlternateToArray(directory + "LAI_model.txt", true, "\\s+",false);
-		TreeMap<String,String[]> Soil = readLargerTextFileAlternateToTreeMap(directory + "Soil_physics.txt", false, ";");
-		String output = directory + "SIMPLE_bucket_model.csv";
+		ArrayList<String[]> LAI_model = readLargerTextFileAlternateToArray(Paths.get(directory, "LAI_model.txt").toString(), true, "\\s+",false);
+		TreeMap<String,String[]> Soil = readLargerTextFileAlternateToTreeMap(Paths.get(directory, "Soil_physics.txt").toString(), false, ";");
+		String output = Paths.get(directory, "SIMPLE_bucket_model.csv").toString();
 
 		double[][] bucket_model = SIMPLE_function(Input, Landuse, LAI_model, Soil, landusesIndexes);
 		write_csv(bucket_model, output);
