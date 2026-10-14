@@ -67,6 +67,8 @@ public class SimpelModel
     public final static int LAI_PHASE = 2;
     public final static int LAI_LAI = 3;
     public final static double SECONDS_PER_DAY = 86400.;
+    // Fraction of the soil water deficit (field capacity minus storage) that can infiltrate per day
+    public final static double INFILTRATION_FRACTION_PER_DAY = 0.25;
     
     
     
@@ -508,10 +510,11 @@ public class SimpelModel
 		    if(krow==0)
 		    {
 //		      # col 17: Q Inf-Limit
-		      bucket_model[krow][INF_LIMIT] = (Field_Capacity-Init_Value_Soil)*0.25; // *(1.-Direct_runoff_factor/100.); /* bug fix */
+		      // infiltration limit per time step: a fixed fraction of the soil deficit per day, scaled to the step length
+		      bucket_model[krow][INF_LIMIT] = (Field_Capacity-Init_Value_Soil)*INFILTRATION_FRACTION_PER_DAY*nt;
 		      
 //		      # col 18: R P-Inf
-		      bucket_model[krow][P_LINF] = Math.min(bucket_model[krow][S_RESTN],bucket_model[krow][INF_LIMIT])*(1.-Direct_runoff_factor/100.) * nt;
+		      bucket_model[krow][P_LINF] = Math.min(bucket_model[krow][S_RESTN],bucket_model[krow][INF_LIMIT])*(1.-Direct_runoff_factor/100.);
 		      
 //		      # col 19: S S-Rest
 		      bucket_model[krow][REST_ETA] = -1*Math.min(0,bucket_model[krow][BILANZ])+bucket_model[krow][I_REM]-bucket_model[krow][I_ETI_LITTER];
@@ -554,7 +557,7 @@ public class SimpelModel
 		    else
 		    {
 //		      # col 17: Q Inf-Limit
-		      bucket_model[krow][INF_LIMIT] = (Field_Capacity-bucket_model[krow-1][STORAGE])*0.25;
+		      bucket_model[krow][INF_LIMIT] = (Field_Capacity-bucket_model[krow-1][STORAGE])*INFILTRATION_FRACTION_PER_DAY*nt;
 		      
 //		      # col 18: R P-Inf
 		      bucket_model[krow][P_LINF] = Math.min(bucket_model[krow][S_RESTN],bucket_model[krow][INF_LIMIT])*(1.-Direct_runoff_factor/100.);
