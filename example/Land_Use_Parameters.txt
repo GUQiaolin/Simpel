@@ -1,0 +1,22 @@
+# Land-use dependent parameters, one row per land use. To add a land use, add a row.
+# The land use of a run is chosen with 'Land use;<name>' in Soil_physics.txt.
+# '-' = not given (optional columns only).
+#
+# MinLAI, MaxLAI    leaf area index outside / inside the growing season (m2/m2), used by the phenology
+# DegreeDay         snow melt per degree above 0 degC (mm/degC/day)
+# DirectRunoff      share of the water passing the litter layer that runs off directly (%)
+# LitterCap         storage capacity of the litter layer (mm)
+# RootDepth         optional, cm: overrides Root Depth in Soil_physics.txt for this land use.
+#                   Must be above 0; for (nearly) sealed surfaces such as urban use a small value, e.g. 1 cm.
+# GreenUpStart, GreenUpEnd, SenescenceStart, SenescenceEnd
+#                   optional, day of year: phenology dates; defaults 121, 135, 305, 319 (1-15 May, 1-15 Nov)
+#
+# Values from the original SIMPEL land-use table (SIMPEL spreadsheet, Hoermann).
+Land_use      MinLAI  MaxLAI  DegreeDay  DirectRunoff  LitterCap  RootDepth  GreenUpStart  GreenUpEnd  SenescenceStart  SenescenceEnd
+beech         2.50    6.00    2.40       0             1.50       -          -             -           -                -
+corn          0.50    3.00    3.00       20            0.00       -          -             -           -                -
+grassland     1.00    2.00    3.00       15            0.00       -          -             -           -                -
+spruce        7.00    7.00    1.80       0             2.00       -          -             -           -                -
+sugar_beet    0.50    3.00    3.00       20            0.00       -          -             -           -                -
+urban         0.10    0.50    5.00       50            0.00       1          -             -           -                -
+winter_wheat  0.50    3.00    3.00       20            0.00       -          -             -           -                -

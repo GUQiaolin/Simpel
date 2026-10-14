@@ -19,6 +19,10 @@ import java.util.Set;
  * "Albedo") stops the run instead of silently falling back to a default. Values are checked against
  * plausible ranges and against each other (wilting point below start of reduction below field capacity,
  * root depth above zero), so the model cannot run into a division by zero and produce NaN silently.
+ *
+ * Land-use dependent values (LAI, degree-day factor, direct runoff, litter capacity) are in
+ * Land_Use_Parameters.txt (see LandUse); if one of them is still found here, the run stops and says so.
+ * Root Depth is required here and can be overridden per land use (RootDepth column), see applyLandUse.
  */
 public class ModelParameters
 {
@@ -28,15 +32,11 @@ public class ModelParameters
 	public static final String ROOT_DEPTH = "Root Depth";
 	public static final String INIT_VALUE_SOIL_PERCENT = "Init-Value Soil %";
 	public static final String LAND_USE = "Land use";
-	public static final String MINIMUM_LAI = "Minimum LAI";
-	public static final String MAXIMUM_LAI = "Maximum LAI";
 	public static final String VEGETATION_FRACTION = "Vegetation Fraction";
 	public static final String LAYER_THICKNESS = "Layer Thickness";
 	public static final String DRAINAGE_COEFF_B = "Drainage Coeff. b";
 	public static final String MAX_DRAINAGE_RATE = "Max. Drainage Rate";
-	public static final String DIRECT_RUNOFF_FACTOR = "Direct runoff factor";
 	public static final String GLUGLA_C = "Glugla coeff.";
-	public static final String CAP_LITTER = "Cap. Litter";
 	public static final String INIT_VALUE_LITTER = "Init-Value Litter";
 	public static final String LITTER_REDUCTION_FACTOR = "Litter Reduction factor";
 	public static final String TIMESTEP = "Timestep";
@@ -49,9 +49,18 @@ public class ModelParameters
 
 	static final Set<String> KNOWN_KEYS = new LinkedHashSet<String>(Arrays.asList(FIELD_CAPACITY_PERCENT,
 			PERMANENT_WILTING_POINT, START_OF_REDUCTION_PERCENT, ROOT_DEPTH, INIT_VALUE_SOIL_PERCENT, LAND_USE,
-			MINIMUM_LAI, MAXIMUM_LAI, VEGETATION_FRACTION, LAYER_THICKNESS, DRAINAGE_COEFF_B, MAX_DRAINAGE_RATE,
-			DIRECT_RUNOFF_FACTOR, GLUGLA_C, CAP_LITTER, INIT_VALUE_LITTER, LITTER_REDUCTION_FACTOR, TIMESTEP,
-			ET_METHOD));
+			VEGETATION_FRACTION, LAYER_THICKNESS, DRAINAGE_COEFF_B, MAX_DRAINAGE_RATE,
+			GLUGLA_C, INIT_VALUE_LITTER, LITTER_REDUCTION_FACTOR, TIMESTEP, ET_METHOD));
+
+	/** Keys that moved to Land_Use_Parameters.txt, with their column name there. */
+	static final Map<String, String> MOVED_TO_LAND_USE_TABLE = new LinkedHashMap<String, String>();
+	static
+	{
+		MOVED_TO_LAND_USE_TABLE.put("Minimum LAI", "MinLAI");
+		MOVED_TO_LAND_USE_TABLE.put("Maximum LAI", "MaxLAI");
+		MOVED_TO_LAND_USE_TABLE.put("Direct runoff factor", "DirectRunoff");
+		MOVED_TO_LAND_USE_TABLE.put("Cap. Litter", "LitterCap");
+	}
 	static
 	{
 		KNOWN_KEYS.addAll(ET_KEYS);
@@ -63,19 +72,17 @@ public class ModelParameters
 	public final double fieldCapacityPercent;
 	public final double wiltingPointPercent;
 	public final double startOfReductionPercent;  // NaN if absent (allowed for the Penman-Monteith method)
-	public final double rootDepth;                 // cm
+	public final double soilRootDepth;             // cm, as given in Soil_physics.txt
+	private double rootDepth;                      // cm, after the land-use override (applyLandUse)
+	private String rootDepthSource = "Soil_physics.txt";
 	public final double initialSoilPercent;
 	public final double gluglaCoefficient;
 	// vegetation and surface
 	public final String landUse;
-	public final double minimumLai;
-	public final double maximumLai;
 	public final double vegetationFraction;
 	public final double layerThickness;            // mm per unit LAI
 	public final double drainageCoefficientB;
 	public final double maxDrainageRate;           // mm/day
-	public final double directRunoffFactor;        // %
-	public final double litterCapacity;            // mm
 	public final double initialLitter;             // mm
 	public final double litterReductionFactor;
 	// method
@@ -86,6 +93,11 @@ public class ModelParameters
 		this.values = values;
 		for (String key : values.keySet())
 		{
+			if (MOVED_TO_LAND_USE_TABLE.containsKey(key))
+			{
+				throw new IllegalArgumentException("'" + key + "' is land-use dependent and has moved to "
+						+ LandUse.FILE_NAME + " (column " + MOVED_TO_LAND_USE_TABLE.get(key) + "); remove it from Soil_physics.txt");
+			}
 			if (!KNOWN_KEYS.contains(key))
 			{
 				throw new IllegalArgumentException("Unknown key '" + key + "' in Soil_physics.txt" + suggestion(key));
@@ -94,27 +106,19 @@ public class ModelParameters
 		fieldCapacityPercent = required(FIELD_CAPACITY_PERCENT, 0., 100.);
 		wiltingPointPercent = required(PERMANENT_WILTING_POINT, 0., 100.);
 		startOfReductionPercent = optional(START_OF_REDUCTION_PERCENT, Double.NaN, 0., 100.);
-		rootDepth = required(ROOT_DEPTH, 0., 10000.);
+		soilRootDepth = required(ROOT_DEPTH, 0., 10000.);
+		rootDepth = soilRootDepth;
 		initialSoilPercent = required(INIT_VALUE_SOIL_PERCENT, 0., 100.);
 		gluglaCoefficient = required(GLUGLA_C, 0., 1e6);
 		landUse = requiredText(LAND_USE);
-		minimumLai = required(MINIMUM_LAI, 0., 20.);
-		maximumLai = required(MAXIMUM_LAI, 0., 20.);
 		vegetationFraction = required(VEGETATION_FRACTION, 0., 1.);
 		layerThickness = required(LAYER_THICKNESS, 0., 10.);
 		drainageCoefficientB = required(DRAINAGE_COEFF_B, 0., 100.);
 		maxDrainageRate = required(MAX_DRAINAGE_RATE, 0., 1000.);
-		directRunoffFactor = required(DIRECT_RUNOFF_FACTOR, 0., 100.);
-		litterCapacity = required(CAP_LITTER, 0., 1000.);
 		initialLitter = required(INIT_VALUE_LITTER, 0., 1000.);
 		litterReductionFactor = required(LITTER_REDUCTION_FACTOR, 0., 1000.);
 		etMethod = values.containsKey(ET_METHOD) ? values.get(ET_METHOD).toUpperCase() : "HAUDE";
 
-		if (rootDepth <= 0.)
-		{
-			throw new IllegalArgumentException("'" + ROOT_DEPTH + "' must be above 0 cm (it sets the size of the soil water "
-					+ "store; 0 makes every result NaN). For (nearly) sealed surfaces such as urban, use a small value, e.g. 1 cm.");
-		}
 		if (wiltingPointPercent >= fieldCapacityPercent)
 		{
 			throw new IllegalArgumentException("'" + PERMANENT_WILTING_POINT + "' (" + wiltingPointPercent
@@ -127,16 +131,39 @@ public class ModelParameters
 					+ ") must be above the wilting point (" + wiltingPointPercent + ") and at most field capacity ("
 					+ fieldCapacityPercent + ")");
 		}
-		if (maximumLai <= 0. || minimumLai > maximumLai)
-		{
-			throw new IllegalArgumentException("LAI must satisfy 0 <= '" + MINIMUM_LAI + "' <= '" + MAXIMUM_LAI
-					+ "' and '" + MAXIMUM_LAI + "' > 0 (got " + minimumLai + ", " + maximumLai + ")");
-		}
 		if (litterReductionFactor <= 0.)
 		{
 			throw new IllegalArgumentException("'" + LITTER_REDUCTION_FACTOR + "' must be above 0");
 		}
 	}
+
+	/**
+	 * Applies the land use: its RootDepth, if given, overrides Root Depth from Soil_physics.txt. Then checks
+	 * that the root depth is above zero (it sets the size of the soil water store; 0 used to make every
+	 * result NaN).
+	 */
+	public void applyLandUse(LandUse landUse)
+	{
+		if (!Double.isNaN(landUse.rootDepth))
+		{
+			if (landUse.rootDepth != soilRootDepth)
+			{
+				System.out.println("Root depth " + landUse.rootDepth + " cm from " + LandUse.FILE_NAME + " (land use "
+						+ landUse.name + ") overrides Root Depth " + soilRootDepth + " cm in Soil_physics.txt");
+			}
+			rootDepth = landUse.rootDepth;
+			rootDepthSource = LandUse.FILE_NAME + " (land use " + landUse.name + ")";
+		}
+		if (rootDepth <= 0.)
+		{
+			throw new IllegalArgumentException("Root depth must be above 0 cm (from " + rootDepthSource + "). It sets the size "
+					+ "of the soil water store, and 0 makes every result NaN. For (nearly) sealed surfaces such as urban, "
+					+ "use a small value, e.g. 1 cm.");
+		}
+	}
+
+	/** Root depth in cm after the land-use override. */
+	public double rootDepth() { return rootDepth; }
 
 	/** Reads and checks Soil_physics.txt. */
 	public static ModelParameters read(Path file) throws IOException

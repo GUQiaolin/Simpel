@@ -1,19 +1,14 @@
 package thud.simpel;
 
-import java.io.BufferedReader;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.TreeMap;
 
 public class SimpelModel
 {	
@@ -60,10 +55,6 @@ public class SimpelModel
     public final static int LATENT_HEAT_FLUX=36;       // W m-2, from ETaTotal (all methods)
     public final static int NUMBER_OF_COLUMNS=37;
     
-    public final static int LAI_IND = 0;
-    public final static int LAI_DOY = 1;
-    public final static int LAI_PHASE = 2;
-    public final static int LAI_LAI = 3;
     public final static double SECONDS_PER_DAY = 86400.;
     // Fraction of the soil water deficit (field capacity minus storage) that can infiltrate per day
     public final static double INFILTRATION_FRACTION_PER_DAY = 0.25;
@@ -125,32 +116,50 @@ public class SimpelModel
 		{
 			throw new IllegalArgumentException("readET was requested but Global_Input.txt has no ET0 column");
 		}
-		ArrayList<String[]> Landuse = readLargerTextFileAlternateToArray(Paths.get(directory, "Land_Use.txt").toString(), true, "\\s+",false);
-		ArrayList<String[]> Landuses = readLargerTextFileAlternateToArray(Paths.get(directory, "Land_Use.txt").toString(), false, "\\s+",false);
-		String[] landusesHeader = Landuses.get(0);
-		TreeMap<String,Integer> landusesIndexes = new TreeMap<String,Integer>();
-		for (int i=1;i<landusesHeader.length;i++)
+		LandUse landUse;
+		HaudeCoefficients haude = null;
+		try
 		{
-			landusesIndexes.put( landusesHeader[i], i);
+			if (!Files.exists(Paths.get(directory, LandUse.FILE_NAME)) && Files.exists(Paths.get(directory, "Land_Use.txt")))
+			{
+				throw new IllegalArgumentException(LandUse.FILE_NAME + " not found. Land_Use.txt and LAI_model.txt have been "
+						+ "replaced by " + LandUse.FILE_NAME + " (one row per land use) and " + HaudeCoefficients.FILE_NAME
+						+ "; see GLOSSARY.md");
+			}
+			landUse = LandUse.read(Paths.get(directory, LandUse.FILE_NAME), parameters.landUse);
+			if (!"PM".equals(parameters.etMethod) || Files.exists(Paths.get(directory, HaudeCoefficients.FILE_NAME)))
+			{
+				haude = HaudeCoefficients.read(Paths.get(directory, HaudeCoefficients.FILE_NAME), parameters.landUse);
+			}
 		}
-		ArrayList<String[]> LAI_model = readLargerTextFileAlternateToArray(Paths.get(directory, "LAI_model.txt").toString(), true, "\\s+",false);
+		catch (IOException e)
+		{
+			throw new UncheckedIOException(e);
+		}
+		parameters.applyLandUse(landUse);
+		for (String unused : new String[] {"Land_Use.txt", "LAI_model.txt"})
+		{
+			if (Files.exists(Paths.get(directory, unused)))
+			{
+				System.out.println("Note: " + unused + " is no longer read (replaced by " + LandUse.FILE_NAME + ")");
+			}
+		}
 		String output = Paths.get(directory, "SIMPLE_bucket_model.csv").toString();
 
-		double[][] bucket_model = SIMPLE_function(forcing, parameters, Landuse, LAI_model, landusesIndexes);
+		double[][] bucket_model = SIMPLE_function(forcing, parameters, landUse, haude);
 		write_csv(bucket_model, output);
 
 	}
 	
 	
-	public double[][] SIMPLE_function(Forcing forcing, ModelParameters parameters, ArrayList<String[]> Landuse, 
-			ArrayList<String[]> LAI_model, TreeMap<String,Integer> landusesIndexes)
+	public double[][] SIMPLE_function(Forcing forcing, ModelParameters parameters, LandUse landUse, HaudeCoefficients haude)
 	{		
 		double Field_Capacity_Percent=parameters.fieldCapacityPercent;
 		double Permanent_Wilting_Point=parameters.wiltingPointPercent;
 		// Start of Reduction is only used by the HAUDE and ET0 methods; in PM mode the surface conductance
 		// limits ET as the soil dries, so the key can be left out (NaN)
 		double Start_of_Reduction_Percent = parameters.startOfReductionPercent;
-		double Root_Depth=parameters.rootDepth;
+		double Root_Depth=parameters.rootDepth();
 		double Init_Value_Soil_Percent=parameters.initialSoilPercent;
 		double Field_Capacity=parameters.fieldCapacity();
 		double Perm_Wilting_Point=parameters.wiltingPoint();
@@ -159,16 +168,16 @@ public class SimpelModel
 		double Init_Value_Soil=parameters.initialSoilWater();
 		double Depth_of_soil=parameters.soilDepthMm();
 		String Land_use=parameters.landUse;
-		double Minimum_LAI=parameters.minimumLai;
-		double Maximum_LAI=parameters.maximumLai;
+		double Minimum_LAI=landUse.minimumLai();
+		double Maximum_LAI=landUse.maximumLai();
 		double vcover=parameters.vegetationFraction;
 		double layer_thickness=parameters.layerThickness;
 		double intc_drainage_coeff_b=parameters.drainageCoefficientB;
 		double intc_drainage_max_d=parameters.maxDrainageRate;
-		double Direct_runoff_factor=parameters.directRunoffFactor;
+		double Direct_runoff_factor=landUse.directRunoffFactor;
 		double Glugla_Coeff_c=parameters.gluglaCoefficient;
 		double Lambda=parameters.gluglaLambda();
-		double Cap_Litter=parameters.litterCapacity;
+		double Cap_Litter=landUse.litterCapacity;
 		double Init_Value_Litter=parameters.initialLitter;
 		double Litter_Reduction_factor=parameters.litterReductionFactor;
 
@@ -185,12 +194,7 @@ public class SimpelModel
 						+ " h). The time step is now taken from the dates; remove the Timestep line.");
 			}
 		}
-		if (!landusesIndexes.containsKey(Land_use))
-		{
-			throw new IllegalArgumentException("Land use '" + Land_use + "' is not a column of Land_Use.txt " + landusesIndexes.keySet());
-		}
-		
-		int landuseIndex = landusesIndexes.get(Land_use); 
+
 
 
 
@@ -265,37 +269,9 @@ public class SimpelModel
 		  double init_stor  = Init_Value_Soil; 
 		  double init_swe   = 0.;
 		    
-		  // LAI_model.txt has four rows: start and end of green-up, start and end of senescence.
-		  // LAI is held at the minimum before green-up and after senescence, at the maximum in between,
-		  // and interpolated linearly during green-up and senescence.
-		  double[][] laiModel = new double[4][4];
-		  for (int i=0;i<LAI_model.size();i++)
-		  {
-			  laiModel[i][LAI_IND] = Double.parseDouble(LAI_model.get(i)[0]);
-			  laiModel[i][LAI_DOY] = Double.parseDouble(LAI_model.get(i)[1]);
-			  laiModel[i][LAI_PHASE] = Double.parseDouble(LAI_model.get(i)[2]);
-		  }
-		  
-//		  # update LAI model according to soil physics ($kf 2023-03-28) -> ignore land use table
-//		  # update Litter according to land use table
-		  laiModel[0][LAI_LAI]= Minimum_LAI;
-		  laiModel[1][LAI_LAI]= Maximum_LAI;
-		  laiModel[2][LAI_LAI]= Maximum_LAI;
-		  laiModel[3][LAI_LAI]= Minimum_LAI;
-//		  # update Litter according to land use table
-		  double landuse_DayDegree = landuseValue(Landuse, "Day_degree", landuseIndex);
-		  
-		  double greenUpStartLai = laiModel[0][LAI_LAI];
-		  double greenUpStartDoy = laiModel[0][LAI_DOY];
-		  
-		  double greenUpEndLai = laiModel[1][LAI_LAI];
-		  double greenUpEndDoy = laiModel[1][LAI_DOY];
-		  
-		  double senescenceStartLai = laiModel[2][LAI_LAI];
-		  double senescenceStartDoy = laiModel[2][LAI_DOY];
-		  
-		  double senescenceEndLai = laiModel[3][LAI_LAI];
-		  double senescenceEndDoy = laiModel[3][LAI_DOY];
+		  // LAI from the default phenology of the land use (see Phenology)
+		  Phenology phenology = landUse.phenology;
+		  double landuse_DayDegree = landUse.degreeDay;
 
 		  double ts = timestep * 3600; // timestep from soil physics is given in hours, ts is a conversion to seconds
           	  double nt = ts / SECONDS_PER_DAY; // fractional time step
@@ -378,7 +354,7 @@ public class SimpelModel
 		  double[] haudeStepEtp = null;
 		  if (!usePenmanMonteith && !getReadETFromFile() && timestep < 24.)
 		  {
-			  haudeStepEtp = haudeSubDaily(forcing, Landuse, landuseIndex);
+			  haudeStepEtp = haudeSubDaily(forcing, haude);
 		  }
 
 //		  # calculate the rest
@@ -434,30 +410,11 @@ public class SimpelModel
 		      }
 		    }
 //		    # col 7: G LAI
-		    if(doy <= greenUpStartDoy)
-		    {
-		      bucket_model[krow][LAI] = greenUpStartLai;
-		    }
-		    else if(doy <= greenUpEndDoy)
-		    {
-		      bucket_model[krow][LAI] = Minimum_LAI+(greenUpEndLai-greenUpStartLai)*((doy-greenUpStartDoy)/(greenUpEndDoy-greenUpStartDoy));
-		    }
-		    else if(doy <= senescenceStartDoy)
-		    {
-		      bucket_model[krow][LAI] = senescenceStartLai;
-		    }
-		    else if(doy <= senescenceEndDoy)
-		    {
-		      bucket_model[krow][LAI] = Maximum_LAI+(senescenceEndLai-senescenceStartLai)*((doy-senescenceStartDoy)/(senescenceEndDoy-senescenceStartDoy));
-		    }
-		    else
-		    {
-		      bucket_model[krow][LAI] = senescenceEndLai;
-		    }
+		    bucket_model[krow][LAI] = phenology.lai(doy);
 
-//		    # col 5: E ETP Coeff.Landuse[17,which(colnames(Landuse)==Soil[12,2])]
+//		    # col 5: E ETP Coeff (monthly Haude coefficient of the land use)
 		    int month = dates[krow].getMonthValue();
-		    bucket_model[krow][ETP_COEFF] = landuseValue(Landuse, Integer.toString(month), landuseIndex);
+		    bucket_model[krow][ETP_COEFF] = haude == null ? 0. : haude.forMonth(month);
 		    
 //		    # col 6: F ETP Input
 		    if(readETfromFile) // if(numColumnsInput >= 6) // $kf
@@ -727,19 +684,6 @@ public class SimpelModel
 		}
 	
 
-	/** Value of a Land_Use.txt row (found by its label in the first column, e.g. "7" or "Day_degree") for one land use. */
-	static double landuseValue(ArrayList<String[]> landuse, String rowLabel, int landuseIndex)
-	{
-		for (String[] row : landuse)
-		{
-			if (row.length > landuseIndex && row[0].trim().equals(rowLabel))
-			{
-				return Double.parseDouble(row[landuseIndex]);
-			}
-		}
-		throw new IllegalArgumentException("Land_Use.txt has no row labelled '" + rowLabel + "'");
-	}
-
 	/** Haude potential evapotranspiration (mm/day) from the 14:00 air temperature (degC) and relative humidity (%). */
 	static double haudeDailyEtp(double haudeCoefficient, double t14, double rh14)
 	{
@@ -748,7 +692,7 @@ public class SimpelModel
 	}
 
 	/** Haude ETP per sub-daily step: daily value from the row nearest 14:00, distributed over the day. */
-	static double[] haudeSubDaily(Forcing forcing, ArrayList<String[]> Landuse, int landuseIndex)
+	static double[] haudeSubDaily(Forcing forcing, HaudeCoefficients haude)
 	{
 		LocalDateTime[] dates = forcing.dates;
 		int rows = forcing.size();
@@ -766,7 +710,7 @@ public class SimpelModel
 			{
 				if (Math.abs(dates[i].getHour() - HAUDE_HOUR) < Math.abs(dates[haudeRow].getHour() - HAUDE_HOUR)) haudeRow = i;
 			}
-			double coefficient = landuseValue(Landuse, Integer.toString(day.getMonthValue()), landuseIndex);
+			double coefficient = haude.forMonth(day.getMonthValue());
 			double dailyEtp = haudeDailyEtp(coefficient, forcing.airTemperature[haudeRow], forcing.relativeHumidity[haudeRow]);
 
 			double kdownSum = 0.;
@@ -865,43 +809,6 @@ public class SimpelModel
 		return Math.min(items[0], items[1]);
 	}
 	
-   final static Charset ENCODING = StandardCharsets.UTF_8;	
-   public ArrayList<String[]> readLargerTextFileAlternateToArray(String aFileName, boolean skipHeader, String deliminator, boolean onlyFirstLine) 
-   {
-	   ArrayList<String[]> returnFile = new ArrayList<String[]>();
-	   int count = 0;
-	    Path path = Paths.get(aFileName);
-	    try (BufferedReader reader = Files.newBufferedReader(path, ENCODING))
-	    {
-	      String line = null;
-	      while ((line = reader.readLine()) != null) 
-	      {
-	    	  if (onlyFirstLine && count > 0)
-	    	  {
-	    		  return returnFile;
-	    	  }
-	    	  
-	    	  if (skipHeader && count==0)
-	    	  {
-	    		  count++;
-	    		  continue;
-	    	  }
-	    	  if (line != null && line.trim().equals(""))
-	    	  {
-	    		  continue;
-	    	  }
-	    	  String[] lineSplit = line.split(deliminator);
-	    	  returnFile.add(lineSplit);
-	    	  count ++;
-	      }      
-	    }
-		catch (IOException e)
-		{			
-			e.printStackTrace();
-		}
-	    return returnFile;
-	  }
-   
 	public void writeFile(String text, String filename)
 	{	
 		FileOutputStream out; 
