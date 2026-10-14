@@ -4,23 +4,19 @@ import java.io.BufferedReader;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.TreeMap;
 
 public class SimpelModel
 {	
-	  //TODO utilize kdown, ldown, wind speed, now available in Global_Input
-	  //TODO, Use timestep values, Hourly value for timestep now configured in Soil_physics: Timestep;24;
-	
 	private String directory;
 	
 	public final static int PRECIPITATION=0; 
@@ -64,17 +60,6 @@ public class SimpelModel
     public final static int LATENT_HEAT_FLUX=36;       // W m-2, from ETaTotal (all methods)
     public final static int NUMBER_OF_COLUMNS=37;
     
-    public static int INPUT_DATE=0;
-    public static int INPUT_DOY=1;	
-    public static int INPUT_P=2;	
-    public static int INPUT_T14=3;	
-    public static int INPUT_R14=4;	
-    public static int INPUT_ET0=5;    
-    public static int INPUT_K_DOWN=6;
-    public static int INPUT_WIND_SPEED=7;
-    public static int INPUT_L_DOWN=8;
-    public static int INPUT_PRESSURE=9;
-    
     public final static int LAI_IND = 0;
     public final static int LAI_DOY = 1;
     public final static int LAI_PHASE = 2;
@@ -89,46 +74,14 @@ public class SimpelModel
     
     
     
-    public final static String FIELD_CAPACITY_PERCENT = "Field Capacity %";
-    public final static String PERMANENT_WILTING_POINT = "Permanent Wilting Point %";
-    public final static String START_OF_REDUCTION_PERCENT = "Start of Reduction %";
-    public final static String ROOT_DEPTH = "Root Depth";
-    public final static String INIT_VALUE_SOIL_PERCENT = "Init-Value Soil %";
-    //public final static String FIELD_CAPACITY = "Field Capacity";
-    //public final static String PERM_WILTING_POINT = "Perm. Wilting Point";
-    //public final static String FWC = "FWC";
-    //public final static String START_OF_REDUCTION = "Start of Reduction";
-    //public final static String INIT_VALUE_SOIL = "Init-Value Soil";
-    //public final static String DEPTH_OF_SOIL = "Depth of soil";	
-    public final static String LAND_USE = "Land use";
-    public final static String MINIMUM_LAI = "Minimum LAI";
-    public final static String MAXIMUM_LAI = "Maximum LAI";
-    public final static String INTC_COVERED_FRACTION = "Vegetation Fraction";
-    public final static String INTC_LAYER_THICKNESS = "Layer Thickness";
-    public final static String INTC_DRAINAGE_EXP_B = "Drainage Coeff. b";
-    public final static String INTC_DRAINAGE_MAX = "Max. Drainage Rate";
-    public final static String DIRECT_RUNOFF_FACTOR = "Direct runoff factor";				
-    public final static String GLUGLA_C = "Glugla coeff.";
-    //public final static String LAMBDA = "Lambda";	
-    public final static String CAP_LITTER = "Cap. Litter";
-    public final static String INIT_VALUE_LITTER = "Init-Value Litter";
-    public final static String LITTER_REDUCTION_FACTOR = "Litter Reduction factor";	
-    public final static String TIMESTEP = "Timestep";	
-    // Optional keys for the evapotranspiration method; see GLOSSARY.md
-    public final static String ET_METHOD = "ET method"; // HAUDE (default) or PM
-    
     public final String tab = "\t";
     public final String linefeed = "\n";
-    private ArrayList<String> bucket_model_dates;
+    private String[] bucket_model_dates;
     
   //public int numColumnsInput = 6;  //hardcoding this for now.
     private Boolean readETfromFile = null; // null: decide from the ET0 column in Global_Input.txt
     // private double ts = 86400.; // model time step in seconds
     int krowEnd = 0;
-    boolean hasKdown = false;
-    boolean hasWindSpeed = false;
-    boolean hasLdown = false;
-    boolean hasPressure = false;
 
     //public double INTC_DRAINAGE_MAX_D = 2.88; // mm/d
     //public double INTC_DRAINAGE_EXP_B = 3.7;  // mm^(-1)
@@ -152,9 +105,26 @@ public class SimpelModel
 	
 	public void process()
 	{
-		ArrayList<String[]> Input = readLargerTextFileAlternateToArray(Paths.get(directory, "Global_Input.txt").toString(), true, "\\s+",false);
-		ArrayList<String[]> InputHeader = readLargerTextFileAlternateToArray(Paths.get(directory, "Global_Input.txt").toString(), false, "\\s+",true);
-		matchInputHeaders(InputHeader);
+		Forcing forcing;
+		ModelParameters parameters;
+		try
+		{
+			forcing = Forcing.read(Paths.get(directory, "Global_Input.txt"));
+			parameters = ModelParameters.read(Paths.get(directory, "Soil_physics.txt"));
+		}
+		catch (IOException e)
+		{
+			throw new UncheckedIOException(e);
+		}
+		// Without a command-line choice, read ET0 whenever the column is present
+		if (readETfromFile == null)
+		{
+			readETfromFile = forcing.hasEt0();
+		}
+		if (readETfromFile && !forcing.hasEt0())
+		{
+			throw new IllegalArgumentException("readET was requested but Global_Input.txt has no ET0 column");
+		}
 		ArrayList<String[]> Landuse = readLargerTextFileAlternateToArray(Paths.get(directory, "Land_Use.txt").toString(), true, "\\s+",false);
 		ArrayList<String[]> Landuses = readLargerTextFileAlternateToArray(Paths.get(directory, "Land_Use.txt").toString(), false, "\\s+",false);
 		String[] landusesHeader = Landuses.get(0);
@@ -164,63 +134,60 @@ public class SimpelModel
 			landusesIndexes.put( landusesHeader[i], i);
 		}
 		ArrayList<String[]> LAI_model = readLargerTextFileAlternateToArray(Paths.get(directory, "LAI_model.txt").toString(), true, "\\s+",false);
-		TreeMap<String,String[]> Soil = readLargerTextFileAlternateToTreeMap(Paths.get(directory, "Soil_physics.txt").toString(), false, ";");
 		String output = Paths.get(directory, "SIMPLE_bucket_model.csv").toString();
 
-		double[][] bucket_model = SIMPLE_function(Input, Landuse, LAI_model, Soil, landusesIndexes);
+		double[][] bucket_model = SIMPLE_function(forcing, parameters, Landuse, LAI_model, landusesIndexes);
 		write_csv(bucket_model, output);
 
 	}
 	
 	
-	public double[][] SIMPLE_function(ArrayList<String[]> Input, ArrayList<String[]> Landuse, 
-			ArrayList<String[]> LAI_model, TreeMap<String,String[]> Soil, TreeMap<String,Integer> landusesIndexes)
+	public double[][] SIMPLE_function(Forcing forcing, ModelParameters parameters, ArrayList<String[]> Landuse, 
+			ArrayList<String[]> LAI_model, TreeMap<String,Integer> landusesIndexes)
 	{		
-		double Field_Capacity_Percent=Double.parseDouble(Soil.get(FIELD_CAPACITY_PERCENT)[1]);//Soil[1][2]
-		double Permanent_Wilting_Point=Double.parseDouble(Soil.get(PERMANENT_WILTING_POINT)[1]);//Soil[2][2]
+		double Field_Capacity_Percent=parameters.fieldCapacityPercent;
+		double Permanent_Wilting_Point=parameters.wiltingPointPercent;
 		// Start of Reduction is only used by the HAUDE and ET0 methods; in PM mode the surface conductance
-		// limits ET as the soil dries, so the key can be left out
-		double Start_of_Reduction_Percent = Soil.containsKey(START_OF_REDUCTION_PERCENT) 
-				? Double.parseDouble(Soil.get(START_OF_REDUCTION_PERCENT)[1]) : Double.NaN;
-		double Root_Depth=Double.parseDouble(Soil.get(ROOT_DEPTH)[1]);//Soil[4][2]
-		double Init_Value_Soil_Percent=Double.parseDouble(Soil.get(INIT_VALUE_SOIL_PERCENT)[1]);//Soil[5][2]
-		double Field_Capacity= Field_Capacity_Percent * Root_Depth / 10.;//Double.parseDouble(Soil.get(FIELD_CAPACITY)[1]);//Soil[6][2]
-		double Perm_Wilting_Point=Permanent_Wilting_Point * Root_Depth / 10.;//Double.parseDouble(Soil.get(PERM_WILTING_POINT)[1]);//Soil[7][2]
-		double fwc=Field_Capacity-Perm_Wilting_Point;//Double.parseDouble(Soil.get(FWC)[1]);//Soil[8][2]
-		double Start_of_Reduction= Start_of_Reduction_Percent * Root_Depth / 10.;///Double.parseDouble(Soil.get(START_OF_REDUCTION)[1]);//Soil[9][2]
-		double Init_Value_Soil=Init_Value_Soil_Percent * Root_Depth / 10.;//Double.parseDouble(Soil.get(INIT_VALUE_SOIL)[1]);//Soil[10][2]
-		double Depth_of_soil=Root_Depth*10;//Double.parseDouble(Soil.get(DEPTH_OF_SOIL)[1]);//Soil[11][2]
-		String Land_use=Soil.get(LAND_USE)[1];//Soil[12][2]
-		double Minimum_LAI=Double.parseDouble(Soil.get(MINIMUM_LAI)[1]);//Soil[13][2]
-		double Maximum_LAI=Double.parseDouble(Soil.get(MAXIMUM_LAI)[1]);//Soil[14][2]
-		double vcover=Double.parseDouble(Soil.get(INTC_COVERED_FRACTION)[1]);
-		double layer_thickness=Double.parseDouble(Soil.get(INTC_LAYER_THICKNESS)[1]);
-		double intc_drainage_coeff_b=Double.parseDouble(Soil.get(INTC_DRAINAGE_EXP_B)[1]);
-		double intc_drainage_max_d=Double.parseDouble(Soil.get(INTC_DRAINAGE_MAX)[1]);
-		double Direct_runoff_factor=Double.parseDouble(Soil.get(DIRECT_RUNOFF_FACTOR)[1]);//Soil[15][2]			
-		double Glugla_Coeff_c=Double.parseDouble(Soil.get(GLUGLA_C)[1]);//Soil[16][2]
-		double Lambda=Glugla_Coeff_c/Depth_of_soil/Depth_of_soil;///Double.parseDouble(Soil.get(LAMBDA)[1]);//Soil[17][2]
-		double Cap_Litter=Double.parseDouble(Soil.get(CAP_LITTER)[1]);//Soil[18][2]
-		double Init_Value_Litter=Double.parseDouble(Soil.get(INIT_VALUE_LITTER)[1]);//Soil[19][2]
-		double Litter_Reduction_factor=Double.parseDouble(Soil.get(LITTER_REDUCTION_FACTOR)[1]);//Soil[20][2]
+		// limits ET as the soil dries, so the key can be left out (NaN)
+		double Start_of_Reduction_Percent = parameters.startOfReductionPercent;
+		double Root_Depth=parameters.rootDepth;
+		double Init_Value_Soil_Percent=parameters.initialSoilPercent;
+		double Field_Capacity=parameters.fieldCapacity();
+		double Perm_Wilting_Point=parameters.wiltingPoint();
+		double fwc=Field_Capacity-Perm_Wilting_Point;
+		double Start_of_Reduction=parameters.startOfReduction();
+		double Init_Value_Soil=parameters.initialSoilWater();
+		double Depth_of_soil=parameters.soilDepthMm();
+		String Land_use=parameters.landUse;
+		double Minimum_LAI=parameters.minimumLai;
+		double Maximum_LAI=parameters.maximumLai;
+		double vcover=parameters.vegetationFraction;
+		double layer_thickness=parameters.layerThickness;
+		double intc_drainage_coeff_b=parameters.drainageCoefficientB;
+		double intc_drainage_max_d=parameters.maxDrainageRate;
+		double Direct_runoff_factor=parameters.directRunoffFactor;
+		double Glugla_Coeff_c=parameters.gluglaCoefficient;
+		double Lambda=parameters.gluglaLambda();
+		double Cap_Litter=parameters.litterCapacity;
+		double Init_Value_Litter=parameters.initialLitter;
+		double Litter_Reduction_factor=parameters.litterReductionFactor;
 
-		// The time step, day of year and month come from the Date column of Global_Input.txt:
-		// dd.mm.yyyy for daily rows, dd.mm.yyyy.hh for sub-daily rows (e.g. 02.01.1995.12).
-		LocalDateTime[] dates = new LocalDateTime[Input.size()];
-		for (int i=0;i<Input.size();i++)
+		// The time step, day of year and month come from the Date column of Global_Input.txt
+		LocalDateTime[] dates = forcing.dates;
+		double timestep = forcing.timestepHours;
+		if (parameters.has(ModelParameters.TIMESTEP))
 		{
-			dates[i] = parseDate(Input.get(i)[INPUT_DATE]);
-		}
-		double timestep = timestepHours(dates, Input.get(0)[INPUT_DATE]);
-		if (Soil.containsKey(TIMESTEP))
-		{
-			double configuredTimestep = Double.parseDouble(Soil.get(TIMESTEP)[1].trim());
+			double configuredTimestep = parameters.optional(ModelParameters.TIMESTEP, timestep);
 			if (Math.abs(configuredTimestep - timestep) > 1e-9)
 			{
 				throw new IllegalArgumentException("Timestep in Soil_physics.txt (" + configuredTimestep 
 						+ " h) does not match the dates in Global_Input.txt (" + timestep 
 						+ " h). The time step is now taken from the dates; remove the Timestep line.");
 			}
+		}
+		if (!landusesIndexes.containsKey(Land_use))
+		{
+			throw new IllegalArgumentException("Land use '" + Land_use + "' is not a column of Land_Use.txt " + landusesIndexes.keySet());
 		}
 		
 		int landuseIndex = landusesIndexes.get(Land_use); 
@@ -266,27 +233,27 @@ public class SimpelModel
 //      # translated to Java by Kerry Nice 20 June 2023
 
 //		  # prepare bucket model matrix
-		double[][] bucket_model = new double[Input.size()][NUMBER_OF_COLUMNS];
-		bucket_model_dates = new ArrayList<String>();
+		int rows = forcing.size();
+		double[][] bucket_model = new double[rows][NUMBER_OF_COLUMNS];
+		bucket_model_dates = forcing.dateLabels;
 		
 //		  # copy Input into bucket-model
 //		  #col 1: A Date
 //		  # col 2: B Precipitation	
-		  for (int i=0;i<Input.size();i++)
+		  for (int i=0;i<rows;i++)
 		  {
-			  bucket_model_dates.add(Input.get(i)[INPUT_DATE]);
-			  bucket_model[i][PRECIPITATION]=Double.parseDouble(Input.get(i)[INPUT_P]);
-			  if (hasKdown)
+			  bucket_model[i][PRECIPITATION]=forcing.precipitation[i];
+			  if (forcing.hasKdown())
 			  {
-				  bucket_model[i][K_DOWN]=Double.parseDouble(Input.get(i)[INPUT_K_DOWN]);
+				  bucket_model[i][K_DOWN]=forcing.kdown[i];
 			  }
-			  if (hasWindSpeed)
+			  if (forcing.hasWindSpeed())
 			  {
-				  bucket_model[i][WIND_SPEED]=Double.parseDouble(Input.get(i)[INPUT_WIND_SPEED]);
+				  bucket_model[i][WIND_SPEED]=forcing.windSpeed[i];
 			  }
-			  if (hasLdown)
+			  if (forcing.hasLdown())
 			  {
-				  bucket_model[i][L_DOWN]=Double.parseDouble(Input.get(i)[INPUT_L_DOWN]);
+				  bucket_model[i][L_DOWN]=forcing.ldown[i];
 			  }
 		  }
 		  
@@ -311,10 +278,10 @@ public class SimpelModel
 		  
 //		  # update LAI model according to soil physics ($kf 2023-03-28) -> ignore land use table
 //		  # update Litter according to land use table
-		  laiModel[0][LAI_LAI]= Double.parseDouble(Soil.get(MINIMUM_LAI)[1]);
-		  laiModel[1][LAI_LAI]= Double.parseDouble(Soil.get(MAXIMUM_LAI)[1]);
-		  laiModel[2][LAI_LAI]= Double.parseDouble(Soil.get(MAXIMUM_LAI)[1]);
-		  laiModel[3][LAI_LAI]= Double.parseDouble(Soil.get(MINIMUM_LAI)[1]);
+		  laiModel[0][LAI_LAI]= Minimum_LAI;
+		  laiModel[1][LAI_LAI]= Maximum_LAI;
+		  laiModel[2][LAI_LAI]= Maximum_LAI;
+		  laiModel[3][LAI_LAI]= Minimum_LAI;
 //		  # update Litter according to land use table
 		  double landuse_DayDegree = landuseValue(Landuse, "Day_degree", landuseIndex);
 		  
@@ -341,7 +308,7 @@ public class SimpelModel
 		  double Litter_Reduction_factor_dt = Litter_Reduction_factor / nt;
 
 		  // Evapotranspiration method: HAUDE (default), ET0 from Global_Input.txt (readET), or PM
-		  String etMethod = Soil.containsKey(ET_METHOD) ? Soil.get(ET_METHOD)[1].trim().toUpperCase() : "HAUDE";
+		  String etMethod = parameters.etMethod;
 		  boolean usePenmanMonteith = etMethod.equals("PM");
 		  if (!usePenmanMonteith && !etMethod.equals("HAUDE"))
 		  {
@@ -349,20 +316,20 @@ public class SimpelModel
 		  }
 		  if (!usePenmanMonteith && Double.isNaN(Start_of_Reduction_Percent))
 		  {
-			  throw new IllegalArgumentException("'" + START_OF_REDUCTION_PERCENT + "' is required in Soil_physics.txt for ET method " 
+			  throw new IllegalArgumentException("'" + ModelParameters.START_OF_REDUCTION_PERCENT + "' is required in Soil_physics.txt for ET method " 
 					  + (getReadETFromFile() ? "ET0 from file" : "HAUDE"));
 		  }
 		  if (usePenmanMonteith && !Double.isNaN(Start_of_Reduction_Percent))
 		  {
-			  System.out.println("Note: '" + START_OF_REDUCTION_PERCENT + "' is ignored with ET method PM");
+			  System.out.println("Note: '" + ModelParameters.START_OF_REDUCTION_PERCENT + "' is ignored with ET method PM");
 		  }
 		  PenmanMonteithEvaporation penmanMonteith = null;
-		  double elevation = optionalValue(Soil, "Elevation", 0.);
+		  double elevation = parameters.optional("Elevation", 0., -500., 9000.);
 		  double[] netRadiation = null;
 		  double[] storageHeat = null;
 		  if (usePenmanMonteith)
 		  {
-			  if (!hasKdown || !hasWindSpeed)
+			  if (!forcing.hasKdown() || !forcing.hasWindSpeed())
 			  {
 				  throw new IllegalArgumentException("ET method PM needs KDOWN and WindSpeed columns in Global_Input.txt");
 			  }
@@ -376,28 +343,28 @@ public class SimpelModel
 				  System.out.println("PM ET at daily steps: storage heat set to 0 (it roughly cancels over a day); "
 						  + "forcing should be daily means of KDOWN, LDOWN, Ta, RH, WindSpeed");
 			  }
-			  if (!hasLdown)
+			  if (!forcing.hasLdown())
 			  {
 				  System.out.println("Warning: no LDOWN column, using clear-sky long-wave radiation (too low under cloud)");
 			  }
-			  penmanMonteith = configurePenmanMonteith(Soil);
+			  penmanMonteith = configurePenmanMonteith(parameters);
 			  System.out.println("ET method: PM (Penman-Monteith, Jarvi et al. 2011 surface conductance)");
-			  netRadiation = new double[Input.size()];
-			  storageHeat = new double[Input.size()];
-			  for (int i=0;i<Input.size();i++)
+			  netRadiation = new double[rows];
+			  storageHeat = new double[rows];
+			  for (int i=0;i<rows;i++)
 			  {
-				  double airTemperature = Double.parseDouble(Input.get(i)[INPUT_T14]);
-				  double relativeHumidity = Double.parseDouble(Input.get(i)[INPUT_R14]);
-				  double kdown = Double.parseDouble(Input.get(i)[INPUT_K_DOWN]);
-				  double ldown = hasLdown ? Double.parseDouble(Input.get(i)[INPUT_L_DOWN])
+				  double airTemperature = forcing.airTemperature[i];
+				  double relativeHumidity = forcing.relativeHumidity[i];
+				  double kdown = forcing.kdown[i];
+				  double ldown = forcing.hasLdown() ? forcing.ldown[i]
 						  : PenmanMonteithEvaporation.clearSkyLdown(airTemperature, relativeHumidity);
 				  netRadiation[i] = penmanMonteith.netRadiation(kdown, ldown, airTemperature);
 			  }
-			  for (int i=0;i<Input.size();i++)
+			  for (int i=0;i<rows;i++)
 			  {
 				  // centred difference of Q* in W m-2 per hour (one-sided at the ends)
 				  int previous = Math.max(i-1, 0);
-				  int next = Math.min(i+1, Input.size()-1);
+				  int next = Math.min(i+1, rows-1);
 				  double tendency = next > previous ? (netRadiation[next]-netRadiation[previous]) / ((next-previous)*timestep) : 0.;
 				  // OHM is fitted to hourly data; over a whole day the storage heat flux is close to zero
 				  storageHeat[i] = dailySteps ? 0. : penmanMonteith.storageHeatFlux(netRadiation[i], tendency);
@@ -411,16 +378,16 @@ public class SimpelModel
 		  double[] haudeStepEtp = null;
 		  if (!usePenmanMonteith && !getReadETFromFile() && timestep < 24.)
 		  {
-			  haudeStepEtp = haudeSubDaily(Input, dates, Landuse, landuseIndex, timestep);
+			  haudeStepEtp = haudeSubDaily(forcing, Landuse, landuseIndex);
 		  }
 
 //		  # calculate the rest
-		  for(int krow=0;krow<Input.size();krow++)
+		  for(int krow=0;krow<rows;krow++)
 		  {			  
-			  double t14 = Double.parseDouble(Input.get(krow)[INPUT_T14]);
-			  double rh14 = Double.parseDouble(Input.get(krow)[INPUT_R14]); // $kf: added for internal ETP calculation
+			  double t14 = forcing.airTemperature[krow];
+			  double rh14 = forcing.relativeHumidity[krow]; // $kf: added for internal ETP calculation
 			  double doy = dates[krow].getDayOfYear();
-			  double p = Double.parseDouble(Input.get(krow)[INPUT_P]);// Input[krow][INPUT_P]
+			  double p = forcing.precipitation[krow];
 //		    # col 3+4:  
 //		    # first row
 		    if(krow==0)
@@ -497,7 +464,7 @@ public class SimpelModel
 		    {   
 		    	  //# check if input variable is given
 //		          # if yes, use given ETP0
-		    	 double et0_1 = Double.parseDouble(Input.get(krow)[INPUT_ET0]);
+		    	 double et0_1 = forcing.et0[krow];
 			      bucket_model[krow][ETP_INPUT] = et0_1;
 			      if(krow==2)
 			      {
@@ -510,10 +477,10 @@ public class SimpelModel
 		    	// ETP_INPUT: wet surface (rs = 0), used for interception and litter like the Haude ETP.
 		    	// ETP_DRY: transpiring surface with the Jarvi et al. (2011) surface conductance; its ratio to
 		    	// ETP_INPUT scales the demand left for the soil (see soilEvapotranspiration).
-		    	double pressure = hasPressure ? Double.parseDouble(Input.get(krow)[INPUT_PRESSURE])
+		    	double pressure = forcing.hasPressure() ? forcing.pressure[krow]
 		    			: PenmanMonteithEvaporation.pressureFromElevation(elevation);
-		    	double windSpeed = Double.parseDouble(Input.get(krow)[INPUT_WIND_SPEED]);
-		    	double kdown = Double.parseDouble(Input.get(krow)[INPUT_K_DOWN]);
+		    	double windSpeed = forcing.windSpeed[krow];
+		    	double kdown = forcing.kdown[krow];
 		    	double soilWaterBefore = krow==0 ? Init_Value_Soil : bucket_model[krow-1][STORAGE];
 		    	double availableEnergy = netRadiation[krow] - storageHeat[krow];
 		    	double aerodynamicResistance = penmanMonteith.aerodynamicResistance(windSpeed);
@@ -750,87 +717,6 @@ public class SimpelModel
 		}
 	
 
-	//match input headers to forcing fields and figure out which are in the input. Some are mandatory, some optional
-	public void matchInputHeaders(ArrayList<String[]> InputHeader)
-	{
-		// InputHeader holds the first line of Global_Input.txt, split into column names
-		String[] columnNames = InputHeader.get(0);
-		boolean hasDate = false, hasDoy = false, hasPrecipitation = false, hasT14 = false, hasRh14 = false;
-		boolean hasEt0Column = false;
-		for (int i=0;i<columnNames.length;i++)
-		{
-			String columnName = columnNames[i].trim();
-			if (columnName.equals("Date"))
-			{
-				INPUT_DATE=i;
-				hasDate = true;
-			}
-			else if (columnName.equals("DOY"))
-			{
-				// optional and not used: the day of year is taken from the Date column
-				INPUT_DOY=i;
-				hasDoy = true;
-			}
-			else if (columnName.equals("P"))
-			{
-				INPUT_P=i;
-				hasPrecipitation = true;
-			}
-			else if (columnName.equals("T14") || columnName.equals("Ta"))
-			{
-				INPUT_T14=i;
-				hasT14 = true;
-			}
-			else if (columnName.equals("RF14") || columnName.equals("RH"))
-			{
-				INPUT_R14=i;
-				hasRh14 = true;
-			}
-			else if (columnName.equals("KDOWN"))
-			{
-				INPUT_K_DOWN=i;
-				hasKdown = true;
-			}
-			else if (columnName.equals("LDOWN"))
-			{
-				INPUT_L_DOWN=i;
-				hasLdown = true;
-			}
-			else if (columnName.equals("WindSpeed"))
-			{
-				INPUT_WIND_SPEED=i;
-				hasWindSpeed = true;
-			}
-			else if (columnName.equals("PRES"))
-			{
-				INPUT_PRESSURE=i;
-				hasPressure = true;
-			}
-			else if (columnName.equals("ET0"))
-			{
-				INPUT_ET0=i;
-				hasEt0Column = true;
-			}
-			else
-			{
-				System.out.println("Warning: ignoring unknown column '" + columnName + "' in Global_Input.txt");
-			}
-		}
-		if (!(hasDate && hasPrecipitation && hasT14 && hasRh14))
-		{
-			throw new IllegalArgumentException("Global_Input.txt must have the columns Date, P, T14 (or Ta) and RF14 (or RH)");
-		}
-		// Without a command-line choice, read ET0 whenever the column is present
-		if (readETfromFile == null)
-		{
-			readETfromFile = hasEt0Column;
-		}
-		if (readETfromFile && !hasEt0Column)
-		{
-			throw new IllegalArgumentException("readET was requested but Global_Input.txt has no ET0 column");
-		}
-	}	
-	
 	/** Value of a Land_Use.txt row (found by its label in the first column, e.g. "7" or "Day_degree") for one land use. */
 	static double landuseValue(ArrayList<String[]> landuse, String rowLabel, int landuseIndex)
 	{
@@ -852,17 +738,18 @@ public class SimpelModel
 	}
 
 	/** Haude ETP per sub-daily step: daily value from the row nearest 14:00, distributed over the day. */
-	double[] haudeSubDaily(ArrayList<String[]> Input, LocalDateTime[] dates, ArrayList<String[]> Landuse,
-			int landuseIndex, double timestep)
+	static double[] haudeSubDaily(Forcing forcing, ArrayList<String[]> Landuse, int landuseIndex)
 	{
-		int stepsPerDay = (int) Math.round(24. / timestep);
-		double[] stepEtp = new double[Input.size()];
+		LocalDateTime[] dates = forcing.dates;
+		int rows = forcing.size();
+		int stepsPerDay = (int) Math.round(24. / forcing.timestepHours);
+		double[] stepEtp = new double[rows];
 		int dayStart = 0;
-		while (dayStart < Input.size())
+		while (dayStart < rows)
 		{
 			LocalDate day = dates[dayStart].toLocalDate();
 			int dayEnd = dayStart;
-			while (dayEnd < Input.size() && dates[dayEnd].toLocalDate().equals(day)) dayEnd++;
+			while (dayEnd < rows && dates[dayEnd].toLocalDate().equals(day)) dayEnd++;
 
 			int haudeRow = dayStart;
 			for (int i=dayStart;i<dayEnd;i++)
@@ -870,73 +757,26 @@ public class SimpelModel
 				if (Math.abs(dates[i].getHour() - HAUDE_HOUR) < Math.abs(dates[haudeRow].getHour() - HAUDE_HOUR)) haudeRow = i;
 			}
 			double coefficient = landuseValue(Landuse, Integer.toString(day.getMonthValue()), landuseIndex);
-			double dailyEtp = haudeDailyEtp(coefficient, Double.parseDouble(Input.get(haudeRow)[INPUT_T14]),
-					Double.parseDouble(Input.get(haudeRow)[INPUT_R14]));
+			double dailyEtp = haudeDailyEtp(coefficient, forcing.airTemperature[haudeRow], forcing.relativeHumidity[haudeRow]);
 
 			double kdownSum = 0.;
-			if (hasKdown)
+			if (forcing.hasKdown())
 			{
-				for (int i=dayStart;i<dayEnd;i++) kdownSum += Math.max(0., Double.parseDouble(Input.get(i)[INPUT_K_DOWN]));
+				for (int i=dayStart;i<dayEnd;i++) kdownSum += Math.max(0., forcing.kdown[i]);
 			}
 			boolean completeDay = (dayEnd - dayStart) == stepsPerDay;
 			for (int i=dayStart;i<dayEnd;i++)
 			{
 				double share = 1. / stepsPerDay;
-				if (hasKdown && completeDay && kdownSum > 0.)
+				if (forcing.hasKdown() && completeDay && kdownSum > 0.)
 				{
-					share = Math.max(0., Double.parseDouble(Input.get(i)[INPUT_K_DOWN])) / kdownSum;
+					share = Math.max(0., forcing.kdown[i]) / kdownSum;
 				}
 				stepEtp[i] = dailyEtp * share;
 			}
 			dayStart = dayEnd;
 		}
 		return stepEtp;
-	}
-
-	static final DateTimeFormatter DAILY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
-	static final DateTimeFormatter HOURLY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy.HH");
-
-	/** Parses dd.mm.yyyy (start of the day) or dd.mm.yyyy.hh. */
-	static LocalDateTime parseDate(String date)
-	{
-		String trimmed = date.trim();
-		if (trimmed.split("\\.").length == 3)
-		{
-			return LocalDate.parse(trimmed, DAILY_DATE).atStartOfDay();
-		}
-		return LocalDateTime.parse(trimmed, HOURLY_DATE);
-	}
-
-	/**
-	 * Time step in hours from the dates: daily dates (dd.mm.yyyy) give 24 h, otherwise the spacing of the
-	 * rows. The spacing must be constant and divide a day evenly (1, 2, 3, 4, 6, 8, 12 or 24 h).
-	 */
-	static double timestepHours(LocalDateTime[] dates, String firstDate)
-	{
-		boolean dailyFormat = firstDate.trim().split("\\.").length == 3;
-		if (dates.length < 2)
-		{
-			return dailyFormat ? 24. : 1.;
-		}
-		long stepMinutes = Duration.between(dates[0], dates[1]).toMinutes();
-		for (int i=2;i<dates.length;i++)
-		{
-			long minutes = Duration.between(dates[i-1], dates[i]).toMinutes();
-			if (minutes != stepMinutes)
-			{
-				throw new IllegalArgumentException("Global_Input.txt rows are not evenly spaced: " + dates[i-1] 
-						+ " to " + dates[i] + " is " + minutes + " min, expected " + stepMinutes + " min");
-			}
-		}
-		if (stepMinutes <= 0 || stepMinutes > 24*60 || (24*60) % stepMinutes != 0)
-		{
-			throw new IllegalArgumentException("Time step of " + stepMinutes + " min does not divide a day evenly");
-		}
-		if (dailyFormat && stepMinutes != 24*60)
-		{
-			throw new IllegalArgumentException("Daily dates (dd.mm.yyyy) must be consecutive days");
-		}
-		return stepMinutes / 60.;
 	}
 
 	/**
@@ -973,31 +813,26 @@ public class SimpelModel
 	}
 
 	/** Reads the PM parameters from Soil_physics.txt; keys that are absent keep the PenmanMonteithEvaporation defaults. */
-	static PenmanMonteithEvaporation configurePenmanMonteith(TreeMap<String,String[]> soil)
+	static PenmanMonteithEvaporation configurePenmanMonteith(ModelParameters parameters)
 	{
 		PenmanMonteithEvaporation penmanMonteith = new PenmanMonteithEvaporation();
-		penmanMonteith.albedo = optionalValue(soil, "Albedo", penmanMonteith.albedo);
-		penmanMonteith.surfaceEmissivity = optionalValue(soil, "Surface emissivity", penmanMonteith.surfaceEmissivity);
-		penmanMonteith.vegetationHeight = optionalValue(soil, "Vegetation height", penmanMonteith.vegetationHeight);
-		penmanMonteith.measurementHeight = optionalValue(soil, "Measurement height", penmanMonteith.measurementHeight);
-		penmanMonteith.ohmA1 = optionalValue(soil, "OHM a1", penmanMonteith.ohmA1);
-		penmanMonteith.ohmA2 = optionalValue(soil, "OHM a2", penmanMonteith.ohmA2);
-		penmanMonteith.ohmA3 = optionalValue(soil, "OHM a3", penmanMonteith.ohmA3);
-		penmanMonteith.maxConductanceG1 = optionalValue(soil, "G1", penmanMonteith.maxConductanceG1);
-		penmanMonteith.kdownShapeG2 = optionalValue(soil, "G2", penmanMonteith.kdownShapeG2);
-		penmanMonteith.humiditySlopeG3 = optionalValue(soil, "G3", penmanMonteith.humiditySlopeG3);
-		penmanMonteith.humidityThresholdG4 = optionalValue(soil, "G4", penmanMonteith.humidityThresholdG4);
-		penmanMonteith.optimumTemperatureG5 = optionalValue(soil, "G5", penmanMonteith.optimumTemperatureG5);
-		penmanMonteith.soilMoistureShapeG6 = optionalValue(soil, "G6", penmanMonteith.soilMoistureShapeG6);
-		penmanMonteith.upperTemperatureTH = optionalValue(soil, "TH", penmanMonteith.upperTemperatureTH);
-		penmanMonteith.lowerTemperatureTL = optionalValue(soil, "TL", penmanMonteith.lowerTemperatureTL);
-		penmanMonteith.maxKdown = optionalValue(soil, "Kmax", penmanMonteith.maxKdown);
+		penmanMonteith.albedo = parameters.optional("Albedo", penmanMonteith.albedo);
+		penmanMonteith.surfaceEmissivity = parameters.optional("Surface emissivity", penmanMonteith.surfaceEmissivity);
+		penmanMonteith.vegetationHeight = parameters.optional("Vegetation height", penmanMonteith.vegetationHeight);
+		penmanMonteith.measurementHeight = parameters.optional("Measurement height", penmanMonteith.measurementHeight);
+		penmanMonteith.ohmA1 = parameters.optional("OHM a1", penmanMonteith.ohmA1);
+		penmanMonteith.ohmA2 = parameters.optional("OHM a2", penmanMonteith.ohmA2);
+		penmanMonteith.ohmA3 = parameters.optional("OHM a3", penmanMonteith.ohmA3);
+		penmanMonteith.maxConductanceG1 = parameters.optional("G1", penmanMonteith.maxConductanceG1);
+		penmanMonteith.kdownShapeG2 = parameters.optional("G2", penmanMonteith.kdownShapeG2);
+		penmanMonteith.humiditySlopeG3 = parameters.optional("G3", penmanMonteith.humiditySlopeG3);
+		penmanMonteith.humidityThresholdG4 = parameters.optional("G4", penmanMonteith.humidityThresholdG4);
+		penmanMonteith.optimumTemperatureG5 = parameters.optional("G5", penmanMonteith.optimumTemperatureG5);
+		penmanMonteith.soilMoistureShapeG6 = parameters.optional("G6", penmanMonteith.soilMoistureShapeG6);
+		penmanMonteith.upperTemperatureTH = parameters.optional("TH", penmanMonteith.upperTemperatureTH);
+		penmanMonteith.lowerTemperatureTL = parameters.optional("TL", penmanMonteith.lowerTemperatureTL);
+		penmanMonteith.maxKdown = parameters.optional("Kmax", penmanMonteith.maxKdown);
 		return penmanMonteith;
-	}
-
-	static double optionalValue(TreeMap<String,String[]> soil, String key, double defaultValue)
-	{
-		return soil.containsKey(key) ? Double.parseDouble(soil.get(key)[1].trim()) : defaultValue;
 	}
 
 	/**
@@ -1057,37 +892,6 @@ public class SimpelModel
 	    return returnFile;
 	  }
    
-   public TreeMap<String,String[]> readLargerTextFileAlternateToTreeMap(String aFileName, boolean skipHeader, String deliminator) 
-   {
-	   TreeMap<String,String[]> returnFile = new TreeMap<String,String[]>();
-	   int count = 0;
-	    Path path = Paths.get(aFileName);
-	    try (BufferedReader reader = Files.newBufferedReader(path, ENCODING))
-	    {
-	      String line = null;
-	      while ((line = reader.readLine()) != null) 
-	      {
-	    	  if (skipHeader && count==0)
-	    	  {
-	    		  count++;
-	    		  continue;
-	    	  }
-	    	  if (line != null && line.trim().equals(""))
-	    	  {
-	    		  continue;
-	    	  }
-	    	  String[] lineSplit = line.split(deliminator);
-	    	  String key = lineSplit[0];
-	    	  returnFile.put(key,lineSplit);
-	    	  count ++;
-	      }      
-	    }
-		catch (IOException e)
-		{			
-			e.printStackTrace();
-		}
-	    return returnFile;
-	  }
 	public void writeFile(String text, String filename)
 	{	
 		FileOutputStream out; 
@@ -1152,7 +956,7 @@ public class SimpelModel
 		int height = bucket_model.length;
 		for (int i=0;i<height;i++)
 		{
-			sb.append(bucket_model_dates.get(i));
+			sb.append(bucket_model_dates[i]);
 			for (int j=0;j<width;j++)
 			{
 				sb.append(tab + bucket_model[i][j]);
