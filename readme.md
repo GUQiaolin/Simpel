@@ -11,7 +11,10 @@ This repository includes a JAVA implementation of the Soil Water Balance Model S
 ## How to run the model
 Compile the source and call java on the command line with the arguments thud.simpel.SimpelModel (i.e., the main class) and the example path (see run.sh script).
 
+The time step is taken from the `Date` column of `Global_Input.txt`: `dd.mm.yyyy` rows give a daily run, `dd.mm.yyyy.hh` rows a sub-daily run (1, 2, 3, 4, 6, 8 or 12 h). Both ET methods work at either step.
+
 * `example/` – daily run with the Haude method (original example).
+* `example_daily_pm/` – the hourly example below aggregated to daily means, run with `ET method;PM`.
 * `example_hourly/` – hourly run with `ET method;PM`, forced with January 2004 of the AU-Preston (Melbourne) tower data from the TARGET repository, averaged to hourly. That data set has no precipitation, so P is 0 and the run shows a dry-down; the measurement height is the 40 m tower.
 
 `GLOSSARY.md` explains all output columns, forcing columns and parameters. `./test.sh` compiles everything, runs the unit tests and checks both examples against `test/reference/` (including the water balance at every step).
