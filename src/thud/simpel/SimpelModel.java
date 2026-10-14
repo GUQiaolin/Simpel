@@ -358,9 +358,11 @@ public class SimpelModel
 			  {
 				  throw new IllegalArgumentException("ET method PM cannot be combined with reading ET0 from file");
 			  }
-			  if (timestep > 1.)
+			  boolean dailySteps = timestep >= 24.;
+			  if (dailySteps)
 			  {
-				  throw new IllegalArgumentException("ET method PM needs Timestep of 1 h or less (OHM storage heat is hourly)");
+				  System.out.println("PM ET at daily steps: storage heat set to 0 (it roughly cancels over a day); "
+						  + "forcing should be daily means of KDOWN, LDOWN, Ta, RH, WindSpeed");
 			  }
 			  if (!hasLdown)
 			  {
@@ -385,7 +387,8 @@ public class SimpelModel
 				  int previous = Math.max(i-1, 0);
 				  int next = Math.min(i+1, Input.size()-1);
 				  double tendency = next > previous ? (netRadiation[next]-netRadiation[previous]) / ((next-previous)*timestep) : 0.;
-				  storageHeat[i] = penmanMonteith.storageHeatFlux(netRadiation[i], tendency);
+				  // OHM is fitted to hourly data; over a whole day the storage heat flux is close to zero
+				  storageHeat[i] = dailySteps ? 0. : penmanMonteith.storageHeatFlux(netRadiation[i], tendency);
 			  }
 		  }
 		  

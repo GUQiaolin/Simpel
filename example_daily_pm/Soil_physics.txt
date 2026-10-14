@@ -1,0 +1,35 @@
+Field Capacity %;25;Water Content Vol. %
+Permanent Wilting Point %;12;Water Content Vol. %
+Start of Reduction %;20;Water Content Vol. %
+Root Depth;100;(cm)
+Init-Value Soil %;24;(Vol.-%)
+Land use;grassland;(see land_use tab)
+Minimum LAI;2;(from land-use table)
+Maximum LAI;2;(from land-use table)
+Vegetation Fraction;0.75;Fraction covered by vegetation (-)
+Layer Thickness;0.35;Layer Thickness of Water Interception for LAI 1 (mm)
+Drainage Coeff. b;3.7;Drainage Coefficient b in Interception model
+Max. Drainage Rate;2.88;Interception Max. Drainage Rate (mm/d)
+Cap. Litter;0;(mm)
+Init-Value Litter;0;(mm)
+Litter Reduction factor;3;-
+Direct runoff factor;15;-				
+Glugla coeff.;150;-
+ET method;PM;HAUDE (default) or PM (Penman-Monteith with radiation forcing)
+Albedo;0.18;Surface albedo (-)
+Surface emissivity;0.98;(-)
+Vegetation height;0.12;(m)
+Measurement height;40;Height of wind and temperature measurement (m); AU-Preston tower
+Elevation;90;Used for air pressure only if there is no PRES column (m)
+OHM a1;0.32;Storage heat coefficient (-), short grass
+OHM a2;0.54;Storage heat coefficient (h), short grass
+OHM a3;-27.40;Storage heat coefficient (W m-2), short grass
+G1;16.4764;Maximum surface conductance (mm s-1), Jarvi et al. 2011
+G2;566.0923;Kdown dependence (W m-2)
+G3;0.2163;Humidity dependence slope (kg g-1)
+G4;3.3649;Humidity deficit threshold (g kg-1)
+G5;11.0764;Optimum temperature (degC)
+G6;0.0176;Soil moisture dependence (mm-1)
+TH;40;Upper temperature limit (degC)
+TL;0;Lower temperature limit (degC)
+Kmax;1200;Maximum Kdown (W m-2)
