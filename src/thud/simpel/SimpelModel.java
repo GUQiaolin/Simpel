@@ -309,7 +309,7 @@ public class SimpelModel
 		  laiModel[2][LAI_LAI]= Double.parseDouble(Soil.get(MAXIMUM_LAI)[1]);
 		  laiModel[3][LAI_LAI]= Double.parseDouble(Soil.get(MINIMUM_LAI)[1]);
 //		  # update Litter according to land use table
-		  double landuse_DayDegree = Double.parseDouble(Landuse.get(16)[landuseIndex]);
+		  double landuse_DayDegree = landuseValue(Landuse, "Day_degree", landuseIndex);
 		  
 		  double greenUpStartLai = laiModel[0][LAI_LAI];
 		  double greenUpStartDoy = laiModel[0][LAI_DOY];
@@ -462,7 +462,7 @@ public class SimpelModel
 
 //		    # col 5: E ETP Coeff.Landuse[17,which(colnames(Landuse)==Soil[12,2])]
 		    int month = dates[krow].getMonthValue();
-		    bucket_model[krow][ETP_COEFF] = Double.parseDouble(Landuse.get(month-1)[landuseIndex]);
+		    bucket_model[krow][ETP_COEFF] = landuseValue(Landuse, Integer.toString(month), landuseIndex);
 		    
 //		    # col 6: F ETP Input
 		    if(readETfromFile) // if(numColumnsInput >= 6) // $kf
@@ -517,7 +517,7 @@ public class SimpelModel
 //		    # col 8: H I-Cap
 		    bucket_model[krow][I_CAP] = layer_thickness*bucket_model[krow][LAI];
 
-		    double intc_drainage_max = intc_drainage_max_d / 86400 * ts; // max. drainage per time step
+		    double intc_drainage_max = intc_drainage_max_d / SECONDS_PER_DAY * ts; // max. drainage per time step
 		    // Maximum Drainage rate adjusted to capacity
 	 	    if(intc_drainage_max > bucket_model[krow][I_CAP]) intc_drainage_max = bucket_model[krow][I_CAP];
 		    
@@ -797,6 +797,19 @@ public class SimpelModel
 		}
 	}	
 	
+	/** Value of a Land_Use.txt row (found by its label in the first column, e.g. "7" or "Day_degree") for one land use. */
+	static double landuseValue(ArrayList<String[]> landuse, String rowLabel, int landuseIndex)
+	{
+		for (String[] row : landuse)
+		{
+			if (row.length > landuseIndex && row[0].trim().equals(rowLabel))
+			{
+				return Double.parseDouble(row[landuseIndex]);
+			}
+		}
+		throw new IllegalArgumentException("Land_Use.txt has no row labelled '" + rowLabel + "'");
+	}
+
 	static final DateTimeFormatter DAILY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 	static final DateTimeFormatter HOURLY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy.HH");
 
