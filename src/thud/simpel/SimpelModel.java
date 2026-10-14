@@ -523,27 +523,13 @@ public class SimpelModel
 		      bucket_model[krow][BALANCE_SOIL] = Init_Value_Soil + bucket_model[krow][P_LINF];
 		      
 //		      # col 21: U ETa
-		      if(bucket_model[krow][BALANCE_SOIL] > Start_of_Reduction)
-		      {
-		        bucket_model[krow][ETA] =  bucket_model[krow][REST_ETA];
-		      }
-		      else
-		      {
-		        bucket_model[krow][ETA] =  bucket_model[krow][REST_ETA]*(bucket_model[krow][BALANCE_SOIL]-Perm_Wilting_Point)/
-		          (Start_of_Reduction- Perm_Wilting_Point);
-		      }		      
+		      bucket_model[krow][ETA] = actualSoilEvapotranspiration(bucket_model[krow][REST_ETA], 
+		    		  bucket_model[krow][BALANCE_SOIL], Start_of_Reduction, Perm_Wilting_Point);		      
 //		      # col 22: V ET-Balance
 		      bucket_model[krow][ET_BALANCE] = bucket_model[krow][BALANCE_SOIL] - bucket_model[krow][ETA];
 		      
 //		      # col 23: W Seepage
-		      if(bucket_model[krow][ET_BALANCE] <= Field_Capacity)
-		      {
-		        bucket_model[krow][SEEPAGE] =  Lambda*Math.pow( (bucket_model[krow][ET_BALANCE]-Perm_Wilting_Point),2) * nt;
-		      }
-		      else
-		      {
-		        bucket_model[krow][SEEPAGE] =  Lambda*Math.pow( (Field_Capacity-Perm_Wilting_Point),2) * nt;
-		      }		      
+		      bucket_model[krow][SEEPAGE] = gluglaSeepage(bucket_model[krow][ET_BALANCE], Field_Capacity, Perm_Wilting_Point, Lambda, nt);		      
 //		      # col 24: X Storage Init.-Value
 		      if(bucket_model[krow][ET_BALANCE] > Field_Capacity)
 		      {
@@ -569,29 +555,14 @@ public class SimpelModel
 		      bucket_model[krow][BALANCE_SOIL] = bucket_model[krow-1][STORAGE] + bucket_model[krow][P_LINF];
 		      
 //		      # col 21: U ETa
-		      if(bucket_model[krow][BALANCE_SOIL] > Start_of_Reduction)
-		      {
-		        bucket_model[krow][ETA] =  bucket_model[krow][REST_ETA];
-		      }
-		      else
-		      {
-		        bucket_model[krow][ETA] =  bucket_model[krow][REST_ETA]*(bucket_model[krow][BALANCE_SOIL]-Perm_Wilting_Point)/
-		          (Start_of_Reduction- Perm_Wilting_Point);
-		      }
+		      bucket_model[krow][ETA] = actualSoilEvapotranspiration(bucket_model[krow][REST_ETA], 
+		    		  bucket_model[krow][BALANCE_SOIL], Start_of_Reduction, Perm_Wilting_Point);
 		      
 //		      # col 22: V ET-Balance
 		      bucket_model[krow][ET_BALANCE] = bucket_model[krow][BALANCE_SOIL] - bucket_model[krow][ETA];
 		      
 //		      # col 23: W Seepage
-		      if(bucket_model[krow][ET_BALANCE] <= Field_Capacity)
-		      {
-		        bucket_model[krow][SEEPAGE] =  Lambda*
-		        		Math.pow((bucket_model[krow][ET_BALANCE]-Perm_Wilting_Point),2) * nt;
-		      }
-		      else
-		      {
-		        bucket_model[krow][SEEPAGE] =  Lambda*Math.pow((Field_Capacity-Perm_Wilting_Point),2) * nt;
-		      }
+		      bucket_model[krow][SEEPAGE] = gluglaSeepage(bucket_model[krow][ET_BALANCE], Field_Capacity, Perm_Wilting_Point, Lambda, nt);
 		      
 //		      # col 24: X Storage Init.-Value
 		      if(bucket_model[krow][ET_BALANCE] > Field_Capacity)
@@ -715,6 +686,34 @@ public class SimpelModel
 		}
 	}	
 	
+	/**
+	 * Actual evapotranspiration from the soil: the remaining demand, reduced linearly between the
+	 * start-of-reduction point and the permanent wilting point. Never negative and never more than
+	 * the water above the wilting point.
+	 */
+	static double actualSoilEvapotranspiration(double remainingDemand, double soilWater, 
+			double startOfReduction, double wiltingPoint)
+	{
+		double availableWater = Math.max(0., soilWater - wiltingPoint);
+		double reductionFactor = 1.;
+		if (soilWater <= startOfReduction)
+		{
+			reductionFactor = availableWater / (startOfReduction - wiltingPoint);
+		}
+		return Math.min(Math.max(0., remainingDemand * reductionFactor), availableWater);
+	}
+
+	/**
+	 * Seepage below the root zone after Glugla: lambda * (W - PWP)^2 per day, with W capped at field
+	 * capacity. Zero at or below the wilting point and never more than the water above it.
+	 */
+	static double gluglaSeepage(double soilWater, double fieldCapacity, double wiltingPoint, double lambda, double nt)
+	{
+		double drainableWater = Math.max(0., Math.min(soilWater, fieldCapacity) - wiltingPoint);
+		double seepage = lambda * drainableWater * drainableWater * nt;
+		return Math.min(seepage, Math.max(0., soilWater - wiltingPoint));
+	}
+
 	double max(double[] items)
 	{
 		return Math.max(items[0], items[1]);
