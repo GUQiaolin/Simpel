@@ -466,11 +466,11 @@ public class SimpelModel
 		    if(krow==0)
 		    {
 //		      # col 13: M ETi Litter
-		      double[] temp = new double[]{Cap_Litter,(0+bucket_model[krow][I_PREC])/Litter_Reduction_factor_dt};
+		      double[] temp = new double[]{Cap_Litter,(Init_Value_Litter+bucket_model[krow][I_PREC])/Litter_Reduction_factor_dt};
 		      bucket_model[krow][I_ETI_LITTER] = Math.min(bucket_model[krow][I_REM],min(temp));
 		      
 //		      # col 14: N Bilanz (needed for col 13 & 15)
-		      bucket_model[krow][BILANZ] = 0 + bucket_model[krow][I_PREC] - bucket_model[krow][I_ETI_LITTER];
+		      bucket_model[krow][BILANZ] = Init_Value_Litter + bucket_model[krow][I_PREC] - bucket_model[krow][I_ETI_LITTER];
 		      
 //		      # col 15: O Content (needed for col 13 & 14)
 		      if(bucket_model[krow][BILANZ] > Cap_Litter)
@@ -603,7 +603,7 @@ public class SimpelModel
 		    krowEnd = krow;
 		  }
 //		  # water balance check
-		  double water_balance = sum_prec - sum_etr - sum_runoff + init_swe + init_stor - bucket_model[krowEnd][STORAGE] - bucket_model[krowEnd][SNOW_WATER_EQUI] - bucket_model[krowEnd][I_BAL] - bucket_model[krowEnd][CONTENT];
+		  double water_balance = sum_prec - sum_etr - sum_runoff + init_swe + init_stor + Init_Value_Litter - bucket_model[krowEnd][STORAGE] - bucket_model[krowEnd][SNOW_WATER_EQUI] - bucket_model[krowEnd][I_BAL] - bucket_model[krowEnd][CONTENT];
 		  System.out.println("water balance check");
 		  System.out.println(water_balance);
 		  
