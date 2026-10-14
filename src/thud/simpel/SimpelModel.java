@@ -82,6 +82,10 @@ public class SimpelModel
     public final static double SECONDS_PER_DAY = 86400.;
     // Fraction of the soil water deficit (field capacity minus storage) that can infiltrate per day
     public final static double INFILTRATION_FRACTION_PER_DAY = 0.25;
+    // Upper limit of the Haude potential evapotranspiration
+    public final static double HAUDE_MAX_ETP_PER_DAY = 7.;   // mm/day
+    // Haude uses the air temperature and humidity at this hour
+    public final static int HAUDE_HOUR = 14;
     
     
     
@@ -386,6 +390,15 @@ public class SimpelModel
 		  }
 		  
 		   
+		  // Haude is a daily method based on the 14:00 temperature and humidity. For sub-daily steps the
+		  // daily value is computed from the row at 14:00 (or the nearest hour) and spread over the day's
+		  // steps in proportion to KDOWN, or evenly when KDOWN is missing or the day is incomplete.
+		  double[] haudeStepEtp = null;
+		  if (!usePenmanMonteith && !getReadETFromFile() && timestep < 24.)
+		  {
+			  haudeStepEtp = haudeSubDaily(Input, dates, Landuse, landuseIndex, timestep);
+		  }
+
 //		  # calculate the rest
 		  for(int krow=0;krow<Input.size();krow++)
 		  {			  
@@ -504,8 +517,14 @@ public class SimpelModel
 		    else 
 		    { 
 		    	//# if not calculate ETP
-		    	bucket_model[krow][ETP_INPUT] = Math.min(7, bucket_model[krow][ETP_COEFF]*6.11*
-			    		  Math.pow(10,((7.5*t14)/(237.3+t14)))*(1.-(rh14/100.))) * nt; // $kf: relative humidity fixed
+		    	if (haudeStepEtp != null)
+		    	{
+		    		bucket_model[krow][ETP_INPUT] = haudeStepEtp[krow];
+		    	}
+		    	else
+		    	{
+		    		bucket_model[krow][ETP_INPUT] = haudeDailyEtp(bucket_model[krow][ETP_COEFF], t14, rh14);
+		    	}
 		    }
 		    
 		    // NEW INTERCEPTION MODEL (which works with different time steps)
@@ -808,6 +827,55 @@ public class SimpelModel
 			}
 		}
 		throw new IllegalArgumentException("Land_Use.txt has no row labelled '" + rowLabel + "'");
+	}
+
+	/** Haude potential evapotranspiration (mm/day) from the 14:00 air temperature (degC) and relative humidity (%). */
+	static double haudeDailyEtp(double haudeCoefficient, double t14, double rh14)
+	{
+		double saturationVapourPressure = 6.11 * Math.pow(10, (7.5 * t14) / (237.3 + t14)); // hPa
+		return Math.min(HAUDE_MAX_ETP_PER_DAY, haudeCoefficient * saturationVapourPressure * (1. - rh14 / 100.));
+	}
+
+	/** Haude ETP per sub-daily step: daily value from the row nearest 14:00, distributed over the day. */
+	double[] haudeSubDaily(ArrayList<String[]> Input, LocalDateTime[] dates, ArrayList<String[]> Landuse,
+			int landuseIndex, double timestep)
+	{
+		int stepsPerDay = (int) Math.round(24. / timestep);
+		double[] stepEtp = new double[Input.size()];
+		int dayStart = 0;
+		while (dayStart < Input.size())
+		{
+			LocalDate day = dates[dayStart].toLocalDate();
+			int dayEnd = dayStart;
+			while (dayEnd < Input.size() && dates[dayEnd].toLocalDate().equals(day)) dayEnd++;
+
+			int haudeRow = dayStart;
+			for (int i=dayStart;i<dayEnd;i++)
+			{
+				if (Math.abs(dates[i].getHour() - HAUDE_HOUR) < Math.abs(dates[haudeRow].getHour() - HAUDE_HOUR)) haudeRow = i;
+			}
+			double coefficient = landuseValue(Landuse, Integer.toString(day.getMonthValue()), landuseIndex);
+			double dailyEtp = haudeDailyEtp(coefficient, Double.parseDouble(Input.get(haudeRow)[INPUT_T14]),
+					Double.parseDouble(Input.get(haudeRow)[INPUT_R14]));
+
+			double kdownSum = 0.;
+			if (hasKdown)
+			{
+				for (int i=dayStart;i<dayEnd;i++) kdownSum += Math.max(0., Double.parseDouble(Input.get(i)[INPUT_K_DOWN]));
+			}
+			boolean completeDay = (dayEnd - dayStart) == stepsPerDay;
+			for (int i=dayStart;i<dayEnd;i++)
+			{
+				double share = 1. / stepsPerDay;
+				if (hasKdown && completeDay && kdownSum > 0.)
+				{
+					share = Math.max(0., Double.parseDouble(Input.get(i)[INPUT_K_DOWN])) / kdownSum;
+				}
+				stepEtp[i] = dailyEtp * share;
+			}
+			dayStart = dayEnd;
+		}
+		return stepEtp;
 	}
 
 	static final DateTimeFormatter DAILY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
