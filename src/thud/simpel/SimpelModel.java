@@ -540,17 +540,27 @@ public class SimpelModel
 
 //		    # col 9: I ETi: Evaporation from wetted leaf 
 		    // bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][I_CAP], bucket_model[krow][ETP_INPUT]);
+		    double intc_drainage;
+		    if(bucket_model[krow][I_CAP] <= 0.)
+		    {
+		    	// no canopy storage (LAI or layer thickness 0): intercepted water can evaporate within the
+		    	// step, the rest drains; the formulas below would divide by the zero capacity
+		    	bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][ETP_INPUT], intc_stor_guess);
+		    	intc_drainage = intc_stor_guess - bucket_model[krow][INT_ETI_LEAF];
+		    }
+		    else
+		    {
 		    if(intc_stor_guess > bucket_model[krow][I_CAP])
 			    bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][ETP_INPUT],intc_stor_guess); // real evaporation
     		    else
 			    bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][ETP_INPUT]*intc_stor_guess/ bucket_model[krow][I_CAP], intc_stor_guess);
 //		    # col 10: J I-Bal.: Temp calcalation
 		    //bucket_model[krow][I_BAL] = bucket_model[krow][SNOW_MELT_RAIN] - bucket_model[krow][INT_ETI_LEAF];
-		    double intc_drainage;
 		    if(bucket_model[krow][I_CAP] < intc_stor_guess-bucket_model[krow][INT_ETI_LEAF]) 
 			intc_drainage = Math.max(intc_stor_guess-bucket_model[krow][INT_ETI_LEAF]-bucket_model[krow][I_CAP],intc_drainage_max);
     		    else
 		    	intc_drainage = Math.min(intc_drainage_max*Math.exp(intc_drainage_coeff_b*(intc_stor_guess-bucket_model[krow][INT_ETI_LEAF] - bucket_model[krow][I_CAP])/bucket_model[krow][I_CAP]), intc_stor_guess-bucket_model[krow][INT_ETI_LEAF]);
+		    }
 
 		    // updated meaning of col 10 "I-BAL" is interception storage
 		    bucket_model[krow][I_BAL] = intc_stor_guess-bucket_model[krow][INT_ETI_LEAF]-intc_drainage;
