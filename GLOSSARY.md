@@ -46,7 +46,7 @@ This table says what each one means. Fluxes are in mm per time step, stores in m
 
 | Key | Meaning | Unit |
 |---|---|---|
-| Timestep | Length of one row of `Global_Input.txt` | h |
+| Timestep | No longer needed: the step length is taken from the Date column. If present it must match the dates | h |
 | Field Capacity % / Permanent Wilting Point % / Start of Reduction % / Init-Value Soil % | Volumetric water contents; × root depth gives mm | vol-% |
 | Root Depth | Depth of the soil bucket | cm |
 | Start of Reduction | Below this soil water, ET is reduced linearly to zero at the wilting point | vol-% |
@@ -58,8 +58,8 @@ This table says what each one means. Fluxes are in mm per time step, stores in m
 
 | Column | Meaning | Unit | Needed for |
 |---|---|---|---|
-| Date | `dd.mm.yyyy` or `dd.mm.yyyy.hh` | – | always |
-| DOY | Day of year | – | always |
+| Date | `dd.mm.yyyy` (daily) or `dd.mm.yyyy.hh` (sub-daily); sets the time step, day of year and month | – | always |
+| DOY | Ignored; the day of year comes from Date | – | optional |
 | P | Precipitation | mm/step | always |
 | T14 or Ta | Air temperature (14:00 value for daily Haude runs) | °C | always |
 | RF14 or RH | Relative humidity | % | always |

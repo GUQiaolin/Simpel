@@ -9,6 +9,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.TreeMap;
 
@@ -193,10 +197,24 @@ public class SimpelModel
 		double Init_Value_Litter=Double.parseDouble(Soil.get(INIT_VALUE_LITTER)[1]);//Soil[19][2]
 		double Litter_Reduction_factor=Double.parseDouble(Soil.get(LITTER_REDUCTION_FACTOR)[1]);//Soil[20][2]
 
-		// KN 5/7/23, added a timestep. Date values in Global_Input can be
-		// 02.01.1995.00, 02.01.1995.12 
-		// ETP_COEFF requires the month to be the second item in the date (split by '.')
-		double timestep=Double.parseDouble(Soil.get(TIMESTEP)[1]);  
+		// The time step, day of year and month come from the Date column of Global_Input.txt:
+		// dd.mm.yyyy for daily rows, dd.mm.yyyy.hh for sub-daily rows (e.g. 02.01.1995.12).
+		LocalDateTime[] dates = new LocalDateTime[Input.size()];
+		for (int i=0;i<Input.size();i++)
+		{
+			dates[i] = parseDate(Input.get(i)[INPUT_DATE]);
+		}
+		double timestep = timestepHours(dates, Input.get(0)[INPUT_DATE]);
+		if (Soil.containsKey(TIMESTEP))
+		{
+			double configuredTimestep = Double.parseDouble(Soil.get(TIMESTEP)[1].trim());
+			if (Math.abs(configuredTimestep - timestep) > 1e-9)
+			{
+				throw new IllegalArgumentException("Timestep in Soil_physics.txt (" + configuredTimestep 
+						+ " h) does not match the dates in Global_Input.txt (" + timestep 
+						+ " h). The time step is now taken from the dates; remove the Timestep line.");
+			}
+		}
 		
 		int landuseIndex = landusesIndexes.get(Land_use); 
 
@@ -373,7 +391,7 @@ public class SimpelModel
 		  {			  
 			  double t14 = Double.parseDouble(Input.get(krow)[INPUT_T14]);
 			  double rh14 = Double.parseDouble(Input.get(krow)[INPUT_R14]); // $kf: added for internal ETP calculation
-			  double doy = Double.parseDouble(Input.get(krow)[INPUT_DOY]);// Input[krow][INPUT_DOY]
+			  double doy = dates[krow].getDayOfYear();
 			  double p = Double.parseDouble(Input.get(krow)[INPUT_P]);// Input[krow][INPUT_P]
 //		    # col 3+4:  
 //		    # first row
@@ -443,9 +461,7 @@ public class SimpelModel
 		    }
 
 //		    # col 5: E ETP Coeff.Landuse[17,which(colnames(Landuse)==Soil[12,2])]
-		    String date = bucket_model_dates.get(krow);
-		    String[] dateSplit = date.split("\\.");
-		    int month = Integer.parseInt(dateSplit[1]);
+		    int month = dates[krow].getMonthValue();
 		    bucket_model[krow][ETP_COEFF] = Double.parseDouble(Landuse.get(month-1)[landuseIndex]);
 		    
 //		    # col 6: F ETP Input
@@ -717,6 +733,7 @@ public class SimpelModel
 			}
 			else if (columnName.equals("DOY"))
 			{
+				// optional and not used: the day of year is taken from the Date column
 				INPUT_DOY=i;
 				hasDoy = true;
 			}
@@ -765,9 +782,9 @@ public class SimpelModel
 				System.out.println("Warning: ignoring unknown column '" + columnName + "' in Global_Input.txt");
 			}
 		}
-		if (!(hasDate && hasDoy && hasPrecipitation && hasT14 && hasRh14))
+		if (!(hasDate && hasPrecipitation && hasT14 && hasRh14))
 		{
-			throw new IllegalArgumentException("Global_Input.txt must have the columns Date, DOY, P, T14 (or Ta) and RF14 (or RH)");
+			throw new IllegalArgumentException("Global_Input.txt must have the columns Date, P, T14 (or Ta) and RF14 (or RH)");
 		}
 		// Without a command-line choice, read ET0 whenever the column is present
 		if (readETfromFile == null)
@@ -780,6 +797,52 @@ public class SimpelModel
 		}
 	}	
 	
+	static final DateTimeFormatter DAILY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
+	static final DateTimeFormatter HOURLY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy.HH");
+
+	/** Parses dd.mm.yyyy (start of the day) or dd.mm.yyyy.hh. */
+	static LocalDateTime parseDate(String date)
+	{
+		String trimmed = date.trim();
+		if (trimmed.split("\\.").length == 3)
+		{
+			return LocalDate.parse(trimmed, DAILY_DATE).atStartOfDay();
+		}
+		return LocalDateTime.parse(trimmed, HOURLY_DATE);
+	}
+
+	/**
+	 * Time step in hours from the dates: daily dates (dd.mm.yyyy) give 24 h, otherwise the spacing of the
+	 * rows. The spacing must be constant and divide a day evenly (1, 2, 3, 4, 6, 8, 12 or 24 h).
+	 */
+	static double timestepHours(LocalDateTime[] dates, String firstDate)
+	{
+		boolean dailyFormat = firstDate.trim().split("\\.").length == 3;
+		if (dates.length < 2)
+		{
+			return dailyFormat ? 24. : 1.;
+		}
+		long stepMinutes = Duration.between(dates[0], dates[1]).toMinutes();
+		for (int i=2;i<dates.length;i++)
+		{
+			long minutes = Duration.between(dates[i-1], dates[i]).toMinutes();
+			if (minutes != stepMinutes)
+			{
+				throw new IllegalArgumentException("Global_Input.txt rows are not evenly spaced: " + dates[i-1] 
+						+ " to " + dates[i] + " is " + minutes + " min, expected " + stepMinutes + " min");
+			}
+		}
+		if (stepMinutes <= 0 || stepMinutes > 24*60 || (24*60) % stepMinutes != 0)
+		{
+			throw new IllegalArgumentException("Time step of " + stepMinutes + " min does not divide a day evenly");
+		}
+		if (dailyFormat && stepMinutes != 24*60)
+		{
+			throw new IllegalArgumentException("Daily dates (dd.mm.yyyy) must be consecutive days");
+		}
+		return stepMinutes / 60.;
+	}
+
 	/**
 	 * Actual evapotranspiration from the soil: the remaining demand, reduced linearly between the
 	 * start-of-reduction point and the permanent wilting point. Never negative and never more than
