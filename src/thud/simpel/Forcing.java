@@ -60,10 +60,11 @@ public class Forcing
 	static final Column LDOWN = new Column("LDOWN", "W m-2", 50., 700.);
 	static final Column WIND_SPEED = new Column("WindSpeed", "m s-1", 0., 60.);
 	static final Column PRESSURE = new Column("PRES", "hPa", 500., 1100.);
+	static final Column NET_RADIATION = new Column("QN", "W m-2", -300., 1100.);
 	static final Column ET0 = new Column("ET0", "mm/step", 0., 50.);
 	static final Column DAY_OF_YEAR = new Column("DOY", "-", 1., 366.);
 	static final Column[] COLUMNS = { PRECIPITATION, AIR_TEMPERATURE, RELATIVE_HUMIDITY, KDOWN, LDOWN,
-			WIND_SPEED, PRESSURE, ET0, DAY_OF_YEAR };
+			WIND_SPEED, PRESSURE, NET_RADIATION, ET0, DAY_OF_YEAR };
 
 	static final String[] MISSING_VALUE_MARKERS = { "", "NA", "NaN", "nan", "-999", "-999.0", "-9999" };
 
@@ -78,6 +79,7 @@ public class Forcing
 	public final double[] ldown;             // W m-2, null if absent
 	public final double[] windSpeed;         // m s-1, null if absent
 	public final double[] pressure;          // hPa, null if absent
+	public final double[] netRadiation;      // W m-2, null if absent
 	public final double[] et0;               // mm per step, null if absent
 
 	private Forcing(String[] dateLabels, Map<Column, double[]> values)
@@ -104,6 +106,7 @@ public class Forcing
 		this.ldown = values.get(LDOWN);
 		this.windSpeed = values.get(WIND_SPEED);
 		this.pressure = values.get(PRESSURE);
+		this.netRadiation = values.get(NET_RADIATION);
 		this.et0 = values.get(ET0);
 	}
 
@@ -116,6 +119,7 @@ public class Forcing
 	public boolean hasLdown() { return ldown != null; }
 	public boolean hasWindSpeed() { return windSpeed != null; }
 	public boolean hasPressure() { return pressure != null; }
+	public boolean hasNetRadiation() { return netRadiation != null; }
 	public boolean hasEt0() { return et0 != null; }
 
 	/** Reads and checks Global_Input.txt. */

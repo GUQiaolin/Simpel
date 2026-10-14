@@ -1,22 +1,22 @@
 package thud.simpel;
 
 /**
- * Evapotranspiration by Penman-Monteith with the surface conductance of Järvi et al. 2011, J. Hydrol. 411, 219-237,
- * doi:10.1016/j.jhydrol.2011.10.001, section 2.4), with the available energy taken directly from
- * the radiation forcing:
+ * Evapotranspiration module of SIMPEL's ET method PM: the Penman-Monteith equation with the
+ * surface conductance of Järvi et al. (2011, J. Hydrol. 411, 219-237, doi:10.1016/j.jhydrol.2011.10.001,
+ * section 2.4). The available energy comes straight from the radiation forcing:
  *
- *   available energy  A  = Q* - dQs           (no anthropogenic heat)
- *   net radiation     Q* = (1 - albedo) K_down + emissivity (L_down - sigma T_air^4)
- *   storage heat      dQs = a1 Q* + a2 d(Q*)/dt + a3                (OHM, Grimmond et al. 1991)
- *   latent heat       QE = (s A + rho cp VPD / ra) / (s + gamma (1 + rs / ra))   (Penman-Monteith)
+ *   available energy  A  = Q*                 (no storage heat, no anthropogenic heat)
+ *   net radiation     Q* = QN column of Global_Input.txt if present, otherwise
+ *                     Q* = (1 - albedo) K_down + emissivity (L_down - sigma T_air^4)
+ *   latent heat       QE = (s A + rho cp VPD / ra) / (s + gamma (1 + rs / ra))
  *   surface conductance after Järvi et al. (2011), gsModel 1:
  *                     gs = G1 * (LAI/LAI_max) * g(K_down) * g(dq) * g(T_air) * g(soil moisture deficit)
  *
  * The air temperature stands in for the surface temperature in the outgoing long-wave term.
  * Aerodynamic resistance uses a neutral log profile (no stability correction).
  *
- * All parameters are public fields; defaults: Järvi et al. (2011) conductance parameters;
- * OHM coefficients for short grass from Grimmond and Oke 1999, as used in TARGET for irrigated grass).
+ * All parameters are public fields; the conductance defaults are the Järvi et al. (2011) values
+ * (Järvi et al. 2011).
  */
 public class PenmanMonteithEvaporation
 {
@@ -26,12 +26,9 @@ public class PenmanMonteithEvaporation
 	public static final double GAS_CONSTANT_DRY_AIR = 287.04; // J kg-1 K-1
 	public static final double KELVIN = 273.15;
 
-	// Radiation and storage heat
+	// Radiation
 	public double albedo = 0.18;                  // -
 	public double surfaceEmissivity = 0.98;       // -
-	public double ohmA1 = 0.32;                   // -
-	public double ohmA2 = 0.54;                   // h
-	public double ohmA3 = -27.40;                 // W m-2
 
 	// Aerodynamics
 	public double vegetationHeight = 0.12;        // m
@@ -68,12 +65,6 @@ public class PenmanMonteithEvaporation
 		double vapourPressure = relativeHumidity / 100. * saturationVapourPressure(airTemperature); // hPa
 		double emissivity = 1.24 * Math.pow(vapourPressure / airTemperatureK, 1. / 7.);
 		return emissivity * STEFAN_BOLTZMANN * Math.pow(airTemperatureK, 4);
-	}
-
-	/** Storage heat flux (W m-2) by the objective hysteresis model; netRadiationTendency in W m-2 h-1. */
-	public double storageHeatFlux(double netRadiation, double netRadiationTendency)
-	{
-		return ohmA1 * netRadiation + ohmA2 * netRadiationTendency + ohmA3;
 	}
 
 	/** Aerodynamic resistance for heat and vapour (s m-1), neutral log profile. */
@@ -125,7 +116,7 @@ public class PenmanMonteithEvaporation
 
 	/**
 	 * Latent heat flux (W m-2) by Penman-Monteith (Järvi et al. 2011, eq. 6 with Q* + QF - dQs replaced
-	 * by the available energy from the radiation forcing). surfaceResistance 0 gives a wet surface.
+	 * by the available energy from the radiation forcing, here Q*). surfaceResistance 0 gives a wet surface.
 	 */
 	public double latentHeatFlux(double availableEnergy, double airTemperature, double relativeHumidity,
 			double pressure, double aerodynamicResistance, double surfaceResistance)

@@ -14,27 +14,26 @@ public class PenmanMonteithEvaporationTest
 		double fieldCapacityMinusWiltingPoint = 130.;
 
 		// Summer midday, moist soil: K_down 800, L_down 350 W m-2, 25 degC, 50 %, 1010 hPa, 3 m s-1, LAI 2 of 2,
-		// soil moisture deficit 20 mm, dQ*/dt 50 W m-2 h-1
-		Case midday = new Case(et, 800, 350, 25, 50, 1010, 3, 2, 2, 20, fieldCapacityMinusWiltingPoint, 50);
+		// soil moisture deficit 20 mm. Available energy = net radiation.
+		Case midday = new Case(et, 800, 350, 25, 50, 1010, 3, 2, 2, 20, fieldCapacityMinusWiltingPoint);
 		check("midday net radiation", midday.netRadiation, 559.9152140339172, 1e-9);
-		check("midday storage heat", midday.storageHeat, 178.7728684908535, 1e-9);
 		check("midday aerodynamic resistance", midday.aerodynamicResistance, 69.216382798652, 1e-9);
 		check("midday surface conductance", midday.conductance, 1.495726858191315, 1e-9);
-		check("midday QE wet surface", midday.latentHeatWet, 387.6790256638746, 1e-9);
-		check("midday QE dry surface", midday.latentHeatDry, 109.93881213022848, 1e-9);
-		check("midday ET dry surface (mm/h)", midday.evaporationDryOneHour, 0.16207361814466673, 1e-12);
+		check("midday QE wet surface", midday.latentHeatWet, 519.694475676941, 1e-9);
+		check("midday QE dry surface", midday.latentHeatDry, 147.37602383498984, 1e-9);
+		check("midday ET dry surface (mm/h)", midday.evaporationDryOneHour, 0.21726417584371807, 1e-12);
 
 		// Night: no K_down, conductance at its minimum, dew is not counted as evaporation
-		Case night = new Case(et, 0, 300, 12, 85, 1010, 1.5, 2, 2, 20, fieldCapacityMinusWiltingPoint, 0);
+		Case night = new Case(et, 0, 300, 12, 85, 1010, 1.5, 2, 2, 20, fieldCapacityMinusWiltingPoint);
 		check("night net radiation", night.netRadiation, -73.36911181244545, 1e-9);
 		check("night surface conductance", night.conductance, et.minimumConductance, 1e-12);
-		check("night QE dry surface", night.latentHeatDry, -0.004082037391907665, 1e-9);
+		check("night QE dry surface", night.latentHeatDry, -0.1024485919606425, 1e-9);
 		check("night ET (mm/h)", night.evaporationDryOneHour, 0., 0.);
 
 		// Same weather as midday, soil 5 mm above the wilting point: conductance and QE drop sharply
-		Case dry = new Case(et, 800, 350, 25, 50, 1010, 3, 2, 2, 125, fieldCapacityMinusWiltingPoint, 50);
+		Case dry = new Case(et, 800, 350, 25, 50, 1010, 3, 2, 2, 125, fieldCapacityMinusWiltingPoint);
 		check("dry soil surface conductance", dry.conductance, 0.14724291466411502, 1e-9);
-		check("dry soil QE dry surface", dry.latentHeatDry, 14.540021115506125, 1e-9);
+		check("dry soil QE dry surface", dry.latentHeatDry, 19.491301178893615, 1e-9);
 
 		// Sanity: at the wilting point the conductance falls to its minimum
 		double atWilt = et.surfaceConductance(800, 25, 50, 1010, 2, 2, fieldCapacityMinusWiltingPoint, fieldCapacityMinusWiltingPoint);
@@ -52,14 +51,13 @@ public class PenmanMonteithEvaporationTest
 
 	static class Case
 	{
-		double netRadiation, storageHeat, aerodynamicResistance, conductance, latentHeatWet, latentHeatDry, evaporationDryOneHour;
+		double netRadiation, aerodynamicResistance, conductance, latentHeatWet, latentHeatDry, evaporationDryOneHour;
 
 		Case(PenmanMonteithEvaporation et, double kdown, double ldown, double airTemperature, double relativeHumidity, double pressure,
-				double windSpeed, double lai, double maxLai, double soilMoistureDeficit, double deficitAtWilt, double netRadiationTendency)
+				double windSpeed, double lai, double maxLai, double soilMoistureDeficit, double deficitAtWilt)
 		{
 			netRadiation = et.netRadiation(kdown, ldown, airTemperature);
-			storageHeat = et.storageHeatFlux(netRadiation, netRadiationTendency);
-			double availableEnergy = netRadiation - storageHeat;
+			double availableEnergy = netRadiation;
 			aerodynamicResistance = et.aerodynamicResistance(windSpeed);
 			conductance = et.surfaceConductance(kdown, airTemperature, relativeHumidity, pressure, lai, maxLai,
 					soilMoistureDeficit, deficitAtWilt);

@@ -29,6 +29,8 @@ public class InputValidationTest
 		expectSoilAppendError(example, "albedo;0.2;typo of Albedo", "did you mean 'Albedo'");
 		expectSoilAppendError(example, "Root Depth;50;duplicate", "twice");
 		expectSoilAppendError(example, "Minimum LAI;1;old key", "moved to Land_Use_Parameters.txt");
+		expectSoilAppendError(example, "OHM a1;0.32;old key", "storage heat term (OHM) was removed");
+		expectSoilError(example, "Hemisphere;N", "Hemisphere;South", "must be N or S");
 		expectSoilError(example, "Land use;grassland", "Land use;meadow", "not in Land_Use_Parameters.txt");
 		expectTableError(example, "grassland     1.00    2.00", "grassland     2.50    2.00", "MinLAI <= MaxLAI");
 		expectTableError(example, "urban         0.10    0.50    5.00       50            0.00       1 ",

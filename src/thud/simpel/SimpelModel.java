@@ -46,14 +46,13 @@ public class SimpelModel
     public final static int K_DOWN=28;	
     public final static int WIND_SPEED=29;	
     public final static int L_DOWN=30;	
-    // columns filled by the PM evapotranspiration method (ET method;PM)
-    public final static int NET_RADIATION=31;          // W m-2
-    public final static int STORAGE_HEAT=32;           // W m-2
-    public final static int AERODYNAMIC_RESISTANCE=33; // s m-1
-    public final static int SURFACE_RESISTANCE=34;     // s m-1
-    public final static int ETP_DRY=35;                // mm/step, Penman-Monteith with surface resistance
-    public final static int LATENT_HEAT_FLUX=36;       // W m-2, from ETaTotal (all methods)
-    public final static int NUMBER_OF_COLUMNS=37;
+    // columns filled by the ET method PM
+    public final static int NET_RADIATION=31;          // W m-2, available energy
+    public final static int AERODYNAMIC_RESISTANCE=32; // s m-1
+    public final static int SURFACE_RESISTANCE=33;     // s m-1
+    public final static int ETP_DRY=34;                // mm/step, Penman-Monteith with surface resistance
+    public final static int LATENT_HEAT_FLUX=35;       // W m-2, from ETaTotal (all methods)
+    public final static int NUMBER_OF_COLUMNS=36;
     
     public final static double SECONDS_PER_DAY = 86400.;
     // Fraction of the soil water deficit (field capacity minus storage) that can infiltrate per day
@@ -127,7 +126,8 @@ public class SimpelModel
 						+ "; see GLOSSARY.md");
 			}
 			landUse = LandUse.read(Paths.get(directory, LandUse.FILE_NAME), parameters.landUse);
-			if (!"PM".equals(parameters.etMethod) || Files.exists(Paths.get(directory, HaudeCoefficients.FILE_NAME)))
+			// Haude coefficients are only needed for ET method HAUDE (with PM they only fill ETP_Coeff)
+			if (ModelParameters.HAUDE.equals(parameters.etMethod) || Files.exists(Paths.get(directory, HaudeCoefficients.FILE_NAME)))
 			{
 				haude = HaudeCoefficients.read(Paths.get(directory, HaudeCoefficients.FILE_NAME), parameters.landUse);
 			}
@@ -156,7 +156,7 @@ public class SimpelModel
 	{		
 		double Field_Capacity_Percent=parameters.fieldCapacityPercent;
 		double Permanent_Wilting_Point=parameters.wiltingPointPercent;
-		// Start of Reduction is only used by the HAUDE and ET0 methods; in PM mode the surface conductance
+		// Start of Reduction is only used by the HAUDE and ET0 methods; with PM the surface conductance
 		// limits ET as the soil dries, so the key can be left out (NaN)
 		double Start_of_Reduction_Percent = parameters.startOfReductionPercent;
 		double Root_Depth=parameters.rootDepth();
@@ -290,65 +290,55 @@ public class SimpelModel
 
 		  // Evapotranspiration method: HAUDE (default), ET0 from Global_Input.txt (readET), or PM
 		  String etMethod = parameters.etMethod;
-		  boolean usePenmanMonteith = etMethod.equals("PM");
-		  if (!usePenmanMonteith && !etMethod.equals("HAUDE"))
-		  {
-			  throw new IllegalArgumentException("Unknown ET method '" + etMethod + "', use HAUDE or PM");
-		  }
+		  boolean usePenmanMonteith = etMethod.equals(ModelParameters.PM);
 		  if (!usePenmanMonteith && Double.isNaN(Start_of_Reduction_Percent))
 		  {
 			  throw new IllegalArgumentException("'" + ModelParameters.START_OF_REDUCTION_PERCENT + "' is required in Soil_physics.txt for ET method " 
-					  + (getReadETFromFile() ? "ET0 from file" : "HAUDE"));
+					  + (getReadETFromFile() ? "ET0 from file" : ModelParameters.HAUDE));
 		  }
 		  if (usePenmanMonteith && !Double.isNaN(Start_of_Reduction_Percent))
 		  {
-			  System.out.println("Note: '" + ModelParameters.START_OF_REDUCTION_PERCENT + "' is ignored with ET method PM");
+			  System.out.println("Note: '" + ModelParameters.START_OF_REDUCTION_PERCENT + "' is ignored with ET method " + ModelParameters.PM);
 		  }
 		  PenmanMonteithEvaporation penmanMonteith = null;
 		  double elevation = parameters.optional("Elevation", 0., -500., 9000.);
 		  double[] netRadiation = null;
-		  double[] storageHeat = null;
 		  if (usePenmanMonteith)
 		  {
 			  if (!forcing.hasKdown() || !forcing.hasWindSpeed())
 			  {
-				  throw new IllegalArgumentException("ET method PM needs KDOWN and WindSpeed columns in Global_Input.txt");
+				  throw new IllegalArgumentException("ET method " + ModelParameters.PM 
+						  + " needs KDOWN and WindSpeed columns in Global_Input.txt");
 			  }
 			  if (getReadETFromFile())
 			  {
-				  throw new IllegalArgumentException("ET method PM cannot be combined with reading ET0 from file");
-			  }
-			  boolean dailySteps = timestep >= 24.;
-			  if (dailySteps)
-			  {
-				  System.out.println("PM ET at daily steps: storage heat set to 0 (it roughly cancels over a day); "
-						  + "forcing should be daily means of KDOWN, LDOWN, Ta, RH, WindSpeed");
-			  }
-			  if (!forcing.hasLdown())
-			  {
-				  System.out.println("Warning: no LDOWN column, using clear-sky long-wave radiation (too low under cloud)");
+				  throw new IllegalArgumentException("ET method " + ModelParameters.PM + " cannot be combined with reading ET0 from file");
 			  }
 			  penmanMonteith = configurePenmanMonteith(parameters);
-			  System.out.println("ET method: PM (Penman-Monteith, Jarvi et al. 2011 surface conductance)");
+			  System.out.println("ET method: " + ModelParameters.PM + " (surface conductance after Jarvi et al. 2011)");
+			  // Available energy = net radiation from the forcing: the QN column if present, otherwise computed
+			  // from KDOWN and LDOWN (clear-sky LDOWN if that column is missing too)
 			  netRadiation = new double[rows];
-			  storageHeat = new double[rows];
-			  for (int i=0;i<rows;i++)
+			  if (forcing.hasNetRadiation())
 			  {
-				  double airTemperature = forcing.airTemperature[i];
-				  double relativeHumidity = forcing.relativeHumidity[i];
-				  double kdown = forcing.kdown[i];
-				  double ldown = forcing.hasLdown() ? forcing.ldown[i]
-						  : PenmanMonteithEvaporation.clearSkyLdown(airTemperature, relativeHumidity);
-				  netRadiation[i] = penmanMonteith.netRadiation(kdown, ldown, airTemperature);
+				  System.out.println("Net radiation: QN column of Global_Input.txt");
+			  }
+			  else if (!forcing.hasLdown())
+			  {
+				  System.out.println("Warning: no QN or LDOWN column, net radiation uses clear-sky long-wave radiation (too low under cloud)");
 			  }
 			  for (int i=0;i<rows;i++)
 			  {
-				  // centred difference of Q* in W m-2 per hour (one-sided at the ends)
-				  int previous = Math.max(i-1, 0);
-				  int next = Math.min(i+1, rows-1);
-				  double tendency = next > previous ? (netRadiation[next]-netRadiation[previous]) / ((next-previous)*timestep) : 0.;
-				  // OHM is fitted to hourly data; over a whole day the storage heat flux is close to zero
-				  storageHeat[i] = dailySteps ? 0. : penmanMonteith.storageHeatFlux(netRadiation[i], tendency);
+				  if (forcing.hasNetRadiation())
+				  {
+					  netRadiation[i] = forcing.netRadiation[i];
+					  continue;
+				  }
+				  double airTemperature = forcing.airTemperature[i];
+				  double relativeHumidity = forcing.relativeHumidity[i];
+				  double ldown = forcing.hasLdown() ? forcing.ldown[i]
+						  : PenmanMonteithEvaporation.clearSkyLdown(airTemperature, relativeHumidity);
+				  netRadiation[i] = penmanMonteith.netRadiation(forcing.kdown[i], ldown, airTemperature);
 			  }
 		  }
 		  
@@ -444,7 +434,7 @@ public class SimpelModel
 		    	double windSpeed = forcing.windSpeed[krow];
 		    	double kdown = forcing.kdown[krow];
 		    	double soilWaterBefore = krow==0 ? Init_Value_Soil : bucket_model[krow-1][STORAGE];
-		    	double availableEnergy = netRadiation[krow] - storageHeat[krow];
+		    	double availableEnergy = netRadiation[krow];
 		    	double aerodynamicResistance = penmanMonteith.aerodynamicResistance(windSpeed);
 		    	double conductance = penmanMonteith.surfaceConductance(kdown, t14, rh14, pressure, bucket_model[krow][LAI], Maximum_LAI,
 		    			Field_Capacity - soilWaterBefore, Field_Capacity - Perm_Wilting_Point);
@@ -454,7 +444,6 @@ public class SimpelModel
 		    	bucket_model[krow][ETP_DRY] = PenmanMonteithEvaporation.evaporationDepth(
 		    			penmanMonteith.latentHeatFlux(availableEnergy, t14, rh14, pressure, aerodynamicResistance, surfaceResistance), t14, ts);
 		    	bucket_model[krow][NET_RADIATION] = netRadiation[krow];
-		    	bucket_model[krow][STORAGE_HEAT] = storageHeat[krow];
 		    	bucket_model[krow][AERODYNAMIC_RESISTANCE] = aerodynamicResistance;
 		    	bucket_model[krow][SURFACE_RESISTANCE] = surfaceResistance;
 		    }
@@ -771,27 +760,29 @@ public class SimpelModel
 		return Math.min(Math.max(0., row[REST_ETA] * dryToWetRatio), Math.max(0., row[BALANCE_SOIL] - wiltingPoint));
 	}
 
-	/** Reads the PM parameters from Soil_physics.txt; keys that are absent keep the PenmanMonteithEvaporation defaults. */
+	/** Reads the PM parameters from Soil_physics.txt; keys that are absent keep the defaults. */
 	static PenmanMonteithEvaporation configurePenmanMonteith(ModelParameters parameters)
 	{
-		PenmanMonteithEvaporation penmanMonteith = new PenmanMonteithEvaporation();
-		penmanMonteith.albedo = parameters.optional("Albedo", penmanMonteith.albedo);
-		penmanMonteith.surfaceEmissivity = parameters.optional("Surface emissivity", penmanMonteith.surfaceEmissivity);
-		penmanMonteith.vegetationHeight = parameters.optional("Vegetation height", penmanMonteith.vegetationHeight);
-		penmanMonteith.measurementHeight = parameters.optional("Measurement height", penmanMonteith.measurementHeight);
-		penmanMonteith.ohmA1 = parameters.optional("OHM a1", penmanMonteith.ohmA1);
-		penmanMonteith.ohmA2 = parameters.optional("OHM a2", penmanMonteith.ohmA2);
-		penmanMonteith.ohmA3 = parameters.optional("OHM a3", penmanMonteith.ohmA3);
-		penmanMonteith.maxConductanceG1 = parameters.optional("G1", penmanMonteith.maxConductanceG1);
-		penmanMonteith.kdownShapeG2 = parameters.optional("G2", penmanMonteith.kdownShapeG2);
-		penmanMonteith.humiditySlopeG3 = parameters.optional("G3", penmanMonteith.humiditySlopeG3);
-		penmanMonteith.humidityThresholdG4 = parameters.optional("G4", penmanMonteith.humidityThresholdG4);
-		penmanMonteith.optimumTemperatureG5 = parameters.optional("G5", penmanMonteith.optimumTemperatureG5);
-		penmanMonteith.soilMoistureShapeG6 = parameters.optional("G6", penmanMonteith.soilMoistureShapeG6);
-		penmanMonteith.upperTemperatureTH = parameters.optional("TH", penmanMonteith.upperTemperatureTH);
-		penmanMonteith.lowerTemperatureTL = parameters.optional("TL", penmanMonteith.lowerTemperatureTL);
-		penmanMonteith.maxKdown = parameters.optional("Kmax", penmanMonteith.maxKdown);
-		return penmanMonteith;
+		PenmanMonteithEvaporation pm = new PenmanMonteithEvaporation();
+		pm.albedo = parameters.optional("Albedo", pm.albedo, 0., 1.);
+		pm.surfaceEmissivity = parameters.optional("Surface emissivity", pm.surfaceEmissivity, 0.5, 1.);
+		pm.vegetationHeight = parameters.optional("Vegetation height", pm.vegetationHeight, 0.001, 100.);
+		pm.measurementHeight = parameters.optional("Measurement height", pm.measurementHeight, 0.1, 500.);
+		if (pm.measurementHeight <= 0.67 * pm.vegetationHeight)
+		{
+			throw new IllegalArgumentException("'Measurement height' (" + pm.measurementHeight + " m) must be above the "
+					+ "displacement height 0.67 x 'Vegetation height' (" + 0.67 * pm.vegetationHeight + " m)");
+		}
+		pm.maxConductanceG1 = parameters.optional("G1", pm.maxConductanceG1);
+		pm.kdownShapeG2 = parameters.optional("G2", pm.kdownShapeG2);
+		pm.humiditySlopeG3 = parameters.optional("G3", pm.humiditySlopeG3);
+		pm.humidityThresholdG4 = parameters.optional("G4", pm.humidityThresholdG4);
+		pm.optimumTemperatureG5 = parameters.optional("G5", pm.optimumTemperatureG5);
+		pm.soilMoistureShapeG6 = parameters.optional("G6", pm.soilMoistureShapeG6);
+		pm.upperTemperatureTH = parameters.optional("TH", pm.upperTemperatureTH);
+		pm.lowerTemperatureTL = parameters.optional("TL", pm.lowerTemperatureTL);
+		pm.maxKdown = parameters.optional("Kmax", pm.maxKdown);
+		return pm;
 	}
 
 	/**
@@ -867,7 +858,6 @@ public class SimpelModel
 				+ "WINDSPEED" + tab
 				+ "L_DOWN" + tab
 				+ "NetRadiation" + tab
-				+ "StorageHeat" + tab
 				+ "ra" + tab
 				+ "rs" + tab
 				+ "ETP_dry" + tab

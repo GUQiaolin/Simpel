@@ -10,15 +10,12 @@ Max. Drainage Rate;2.88;Interception Max. Drainage Rate (mm/d)
 Init-Value Litter;0;(mm)
 Litter Reduction factor;3;-
 Glugla coeff.;150;-
-ET method;PM;HAUDE (default) or PM (Penman-Monteith with radiation forcing)
+ET method;PM;HAUDE (default) or PM (Penman-Monteith with the Jarvi et al. 2011 surface conductance; available energy = net radiation from the forcing)
 Albedo;0.18;Surface albedo (-)
 Surface emissivity;0.98;(-)
 Vegetation height;0.12;(m)
-Measurement height;40;Height of wind and temperature measurement (m); AU-Preston tower
+Measurement height;40;Height of wind and temperature measurement (m), AU-Preston tower
 Elevation;90;Used for air pressure only if there is no PRES column (m)
-OHM a1;0.32;Storage heat coefficient (-), short grass
-OHM a2;0.54;Storage heat coefficient (h), short grass
-OHM a3;-27.40;Storage heat coefficient (W m-2), short grass
 G1;16.4764;Maximum surface conductance (mm s-1), Jarvi et al. 2011
 G2;566.0923;Kdown dependence (W m-2)
 G3;0.2163;Humidity dependence slope (kg g-1)
@@ -28,4 +25,4 @@ G6;0.0176;Soil moisture dependence (mm-1)
 TH;40;Upper temperature limit (degC)
 TL;0;Lower temperature limit (degC)
 Kmax;1200;Maximum Kdown (W m-2)
-Hemisphere;N;N or S. Phenology dates and Haude months are written for the northern hemisphere and shifted by half a year for S
+Hemisphere;S;N or S. Phenology dates and Haude months are written for the northern hemisphere and shifted by half a year for S

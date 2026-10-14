@@ -43,10 +43,12 @@ public class ModelParameters
 	public static final String ET_METHOD = "ET method";
 	public static final String HEMISPHERE = "Hemisphere";
 
-	/** Optional keys of the Penman-Monteith (Penman-Monteith) ET method. */
+	/** Optional keys of the PM ET method. */
 	public static final List<String> ET_KEYS = Arrays.asList("Albedo", "Surface emissivity", "Vegetation height",
-			"Measurement height", "Elevation", "OHM a1", "OHM a2", "OHM a3", "G1", "G2", "G3", "G4", "G5", "G6",
-			"TH", "TL", "Kmax");
+			"Measurement height", "Elevation", "G1", "G2", "G3", "G4", "G5", "G6", "TH", "TL", "Kmax");
+
+	public static final String HAUDE = "HAUDE";
+	public static final String PM = "PM";
 
 	static final Set<String> KNOWN_KEYS = new LinkedHashSet<String>(Arrays.asList(FIELD_CAPACITY_PERCENT,
 			PERMANENT_WILTING_POINT, START_OF_REDUCTION_PERCENT, ROOT_DEPTH, INIT_VALUE_SOIL_PERCENT, LAND_USE,
@@ -96,6 +98,11 @@ public class ModelParameters
 		this.values = values;
 		for (String key : values.keySet())
 		{
+			if (key.startsWith("OHM a"))
+			{
+				throw new IllegalArgumentException("'" + key + "' is no longer used: the storage heat term (OHM) was removed and "
+						+ "the available energy is the net radiation from the forcing; remove the line from Soil_physics.txt");
+			}
 			if (MOVED_TO_LAND_USE_TABLE.containsKey(key))
 			{
 				throw new IllegalArgumentException("'" + key + "' is land-use dependent and has moved to "
@@ -120,7 +127,11 @@ public class ModelParameters
 		maxDrainageRate = required(MAX_DRAINAGE_RATE, 0., 1000.);
 		initialLitter = required(INIT_VALUE_LITTER, 0., 1000.);
 		litterReductionFactor = required(LITTER_REDUCTION_FACTOR, 0., 1000.);
-		etMethod = values.containsKey(ET_METHOD) ? values.get(ET_METHOD).toUpperCase() : "HAUDE";
+		etMethod = values.containsKey(ET_METHOD) ? values.get(ET_METHOD).toUpperCase() : HAUDE;
+		if (!etMethod.equals(HAUDE) && !etMethod.equals(PM))
+		{
+			throw new IllegalArgumentException("Unknown ET method '" + values.get(ET_METHOD) + "', use " + HAUDE + " or " + PM);
+		}
 		String hemisphere = values.containsKey(HEMISPHERE) ? values.get(HEMISPHERE).toUpperCase() : "N";
 		if (!hemisphere.equals("N") && !hemisphere.equals("S"))
 		{
