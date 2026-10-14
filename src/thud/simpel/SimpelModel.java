@@ -178,7 +178,10 @@ public class SimpelModel
 	{		
 		double Field_Capacity_Percent=Double.parseDouble(Soil.get(FIELD_CAPACITY_PERCENT)[1]);//Soil[1][2]
 		double Permanent_Wilting_Point=Double.parseDouble(Soil.get(PERMANENT_WILTING_POINT)[1]);//Soil[2][2]
-		double Start_of_Reduction_Percent=Double.parseDouble(Soil.get(START_OF_REDUCTION_PERCENT)[1]);//Soil[3][2]
+		// Start of Reduction is only used by the HAUDE and ET0 methods; in PM mode the surface conductance
+		// limits ET as the soil dries, so the key can be left out
+		double Start_of_Reduction_Percent = Soil.containsKey(START_OF_REDUCTION_PERCENT) 
+				? Double.parseDouble(Soil.get(START_OF_REDUCTION_PERCENT)[1]) : Double.NaN;
 		double Root_Depth=Double.parseDouble(Soil.get(ROOT_DEPTH)[1]);//Soil[4][2]
 		double Init_Value_Soil_Percent=Double.parseDouble(Soil.get(INIT_VALUE_SOIL_PERCENT)[1]);//Soil[5][2]
 		double Field_Capacity= Field_Capacity_Percent * Root_Depth / 10.;//Double.parseDouble(Soil.get(FIELD_CAPACITY)[1]);//Soil[6][2]
@@ -343,6 +346,15 @@ public class SimpelModel
 		  if (!usePenmanMonteith && !etMethod.equals("HAUDE"))
 		  {
 			  throw new IllegalArgumentException("Unknown ET method '" + etMethod + "', use HAUDE or PM");
+		  }
+		  if (!usePenmanMonteith && Double.isNaN(Start_of_Reduction_Percent))
+		  {
+			  throw new IllegalArgumentException("'" + START_OF_REDUCTION_PERCENT + "' is required in Soil_physics.txt for ET method " 
+					  + (getReadETFromFile() ? "ET0 from file" : "HAUDE"));
+		  }
+		  if (usePenmanMonteith && !Double.isNaN(Start_of_Reduction_Percent))
+		  {
+			  System.out.println("Note: '" + START_OF_REDUCTION_PERCENT + "' is ignored with ET method PM");
 		  }
 		  PenmanMonteithEvaporation penmanMonteith = null;
 		  double elevation = optionalValue(Soil, "Elevation", 0.);

@@ -1,6 +1,5 @@
 Field Capacity %;25;Water Content Vol. %
 Permanent Wilting Point %;12;Water Content Vol. %
-Start of Reduction %;20;Water Content Vol. %
 Root Depth;100;(cm)
 Init-Value Soil %;24;(Vol.-%)
 Land use;grassland;(see land_use tab)

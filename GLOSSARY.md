@@ -49,7 +49,7 @@ This table says what each one means. Fluxes are in mm per time step, stores in m
 | Timestep | No longer needed: the step length is taken from the Date column. If present it must match the dates | h |
 | Field Capacity % / Permanent Wilting Point % / Start of Reduction % / Init-Value Soil % | Volumetric water contents; × root depth gives mm | vol-% |
 | Root Depth | Depth of the soil bucket | cm |
-| Start of Reduction | Below this soil water, ET is reduced linearly to zero at the wilting point | vol-% |
+| Start of Reduction | Below this soil water, ET is reduced linearly to zero at the wilting point. HAUDE and ET0 methods only; not used (and not needed) with ET method PM | vol-% |
 | Glugla coeff. | Coefficient c of the Glugla seepage law; lambda = c / depth² | – |
 | Litter Reduction factor | At most 1/factor of the litter water can evaporate per day | – |
 | Direct runoff factor | Percentage of the water passing the litter layer that runs off directly | % |
