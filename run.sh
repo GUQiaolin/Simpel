@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")"
 JAVA_BIN=${JAVA_HOME:+$JAVA_HOME/bin/}
 mkdir -p bin
-${JAVA_BIN}javac -d bin src/thud/simpel/*.java
+${JAVA_BIN}javac -encoding UTF-8 -d bin src/thud/simpel/*.java
 directory=example/
 #readETFromFile=readET
 readETFromFile=dontReadET
