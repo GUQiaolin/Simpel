@@ -101,7 +101,7 @@ public class SimpelModel
     private ArrayList<String> bucket_model_dates;
     
   //public int numColumnsInput = 6;  //hardcoding this for now.
-    private boolean readETfromFile = false; //hardcoding this for now. $kf2023-06-23
+    private Boolean readETfromFile = null; // null: decide from the ET0 column in Global_Input.txt
     // private double ts = 86400.; // model time step in seconds
     int krowEnd = 0;
     boolean hasKdown = false;
@@ -639,48 +639,75 @@ public class SimpelModel
 	//match input headers to forcing fields and figure out which are in the input. Some are mandatory, some optional
 	public void matchInputHeaders(ArrayList<String[]> InputHeader)
 	{
-		for (int i=0;i<InputHeader.size();i++)
+		// InputHeader holds the first line of Global_Input.txt, split into column names
+		String[] columnNames = InputHeader.get(0);
+		boolean hasDate = false, hasDoy = false, hasPrecipitation = false, hasT14 = false, hasRh14 = false;
+		boolean hasEt0Column = false;
+		for (int i=0;i<columnNames.length;i++)
 		{
-			if (InputHeader.get(i).equals("Date"))
+			String columnName = columnNames[i].trim();
+			if (columnName.equals("Date"))
 			{
 				INPUT_DATE=i;
+				hasDate = true;
 			}
-			else if (InputHeader.get(i).equals("DOY"))
+			else if (columnName.equals("DOY"))
 			{
 				INPUT_DOY=i;
+				hasDoy = true;
 			}
-			else if (InputHeader.get(i).equals("P"))
+			else if (columnName.equals("P"))
 			{
 				INPUT_P=i;
+				hasPrecipitation = true;
 			}
-			else if (InputHeader.get(i).equals("T14"))
+			else if (columnName.equals("T14"))
 			{
 				INPUT_T14=i;
+				hasT14 = true;
 			}
-			else if (InputHeader.get(i).equals("RF14"))
+			else if (columnName.equals("RF14"))
 			{
 				INPUT_R14=i;
+				hasRh14 = true;
 			}
-			else if (InputHeader.get(i).equals("KDOWN"))
+			else if (columnName.equals("KDOWN"))
 			{
 				INPUT_K_DOWN=i;
 				hasKdown = true;
 			}
-			else if (InputHeader.get(i).equals("LDOWN"))
+			else if (columnName.equals("LDOWN"))
 			{
 				INPUT_L_DOWN=i;
 				hasLdown = true;
 			}
-			else if (InputHeader.get(i).equals("WindSpeed"))
+			else if (columnName.equals("WindSpeed"))
 			{
 				INPUT_WIND_SPEED=i;
 				hasWindSpeed = true;
 			}
-			else if (InputHeader.get(i).equals("ET0"))
+			else if (columnName.equals("ET0"))
 			{
 				INPUT_ET0=i;
-				readETfromFile = true;
+				hasEt0Column = true;
 			}
+			else
+			{
+				System.out.println("Warning: ignoring unknown column '" + columnName + "' in Global_Input.txt");
+			}
+		}
+		if (!(hasDate && hasDoy && hasPrecipitation && hasT14 && hasRh14))
+		{
+			throw new IllegalArgumentException("Global_Input.txt must have the columns Date, DOY, P, T14 and RF14");
+		}
+		// Without a command-line choice, read ET0 whenever the column is present
+		if (readETfromFile == null)
+		{
+			readETfromFile = hasEt0Column;
+		}
+		if (readETfromFile && !hasEt0Column)
+		{
+			throw new IllegalArgumentException("readET was requested but Global_Input.txt has no ET0 column");
 		}
 	}	
 	
@@ -839,7 +866,7 @@ public class SimpelModel
 	}	
 	public boolean getReadETFromFile()
 	{
-		return readETfromFile;
+		return readETfromFile != null && readETfromFile;
 	}
 	public void setReadETFromFile(String readET)
 	{
