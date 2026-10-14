@@ -261,6 +261,9 @@ public class SimpelModel
 		  double init_stor  = Init_Value_Soil; 
 		  double init_swe   = 0.;
 		    
+		  // LAI_model.txt has four rows: start and end of green-up, start and end of senescence.
+		  // LAI is held at the minimum before green-up and after senescence, at the maximum in between,
+		  // and interpolated linearly during green-up and senescence.
 		  double[][] laiModel = new double[4][4];
 		  for (int i=0;i<LAI_model.size();i++)
 		  {
@@ -278,17 +281,17 @@ public class SimpelModel
 //		  # update Litter according to land use table
 		  double landuse_DayDegree = Double.parseDouble(Landuse.get(16)[landuseIndex]);
 		  
-		  double laimodel13 = laiModel[0][LAI_LAI]; //Double.parseDouble(LAI_model.get(0)[2]); // LAI_model[1,3]
-		  double laimodel12 = laiModel[0][LAI_DOY]; //Double.parseDouble(LAI_model.get(0)[1]); // LAI_model[1,2]
+		  double greenUpStartLai = laiModel[0][LAI_LAI];
+		  double greenUpStartDoy = laiModel[0][LAI_DOY];
 		  
-		  double laimodel23 = laiModel[1][LAI_LAI]; //Double.parseDouble(LAI_model.get(1)[2]); // LAI_model[2,3]
-		  double laimodel22 = laiModel[1][LAI_DOY]; //Double.parseDouble(LAI_model.get(1)[1]); // LAI_model[2,2]
+		  double greenUpEndLai = laiModel[1][LAI_LAI];
+		  double greenUpEndDoy = laiModel[1][LAI_DOY];
 		  
-		  double laimodel33 = laiModel[2][LAI_LAI]; //Double.parseDouble(LAI_model.get(2)[2]); // LAI_model[3,3]
-		  double laimodel32 = laiModel[2][LAI_DOY]; //Double.parseDouble(LAI_model.get(2)[1]); // LAI_model[3,2]
+		  double senescenceStartLai = laiModel[2][LAI_LAI];
+		  double senescenceStartDoy = laiModel[2][LAI_DOY];
 		  
-		  double laimodel43 = laiModel[3][LAI_LAI]; //Double.parseDouble(LAI_model.get(3)[2]); // LAI_model[4,3]
-		  double laimodel42 = laiModel[3][LAI_DOY]; //Double.parseDouble(LAI_model.get(3)[1]); // LAI_model[4,2]
+		  double senescenceEndLai = laiModel[3][LAI_LAI];
+		  double senescenceEndDoy = laiModel[3][LAI_DOY];
 
 		  double ts = timestep * 3600; // timestep from soil physics is given in hours, ts is a conversion to seconds
           	  double nt = ts / SECONDS_PER_DAY; // fractional time step
@@ -334,10 +337,8 @@ public class SimpelModel
 //		    # rest of the rows
 		    if(krow > 0) // $kf: applies to all rows greater than zero
 		    {
-		    	double t14_1 = Double.parseDouble(Input.get(krow)[INPUT_T14]);
-		    	
-		      double[] temp = new double[]{0, landuse_DayDegree*t14_1 * nt};
-		      if(t14_1 < 0)
+		      double[] temp = new double[]{0, landuse_DayDegree*t14 * nt};
+		      if(t14 < 0)
 		      {
 //		        # col 4: Snow melt + rain 
 		        bucket_model[krow][SNOW_MELT_RAIN] = 
@@ -381,25 +382,25 @@ public class SimpelModel
 		    }
 		    
 //		    # col 7: G LAI
-		    if(doy <= laimodel12)
+		    if(doy <= greenUpStartDoy)
 		    {
-		      bucket_model[krow][LAI] = laimodel13;
+		      bucket_model[krow][LAI] = greenUpStartLai;
 		    }
-		    else if(doy <= laimodel22)
+		    else if(doy <= greenUpEndDoy)
 		    {
-		      bucket_model[krow][LAI] = Minimum_LAI+(laimodel23-laimodel13)*((doy-laimodel12)/(laimodel22-laimodel12));
+		      bucket_model[krow][LAI] = Minimum_LAI+(greenUpEndLai-greenUpStartLai)*((doy-greenUpStartDoy)/(greenUpEndDoy-greenUpStartDoy));
 		    }
-		    else if(doy <= laimodel32)
+		    else if(doy <= senescenceStartDoy)
 		    {
-		      bucket_model[krow][LAI] = laimodel33;
+		      bucket_model[krow][LAI] = senescenceStartLai;
 		    }
-		    else if(doy <= laimodel42)
+		    else if(doy <= senescenceEndDoy)
 		    {
-		      bucket_model[krow][LAI] = Maximum_LAI+(laimodel43-laimodel33)*((doy-laimodel32)/(laimodel42-laimodel32));
+		      bucket_model[krow][LAI] = Maximum_LAI+(senescenceEndLai-senescenceStartLai)*((doy-senescenceStartDoy)/(senescenceEndDoy-senescenceStartDoy));
 		    }
 		    else
 		    {
-		      bucket_model[krow][LAI] = laimodel43;
+		      bucket_model[krow][LAI] = senescenceEndLai;
 		    }
 
 		    // NEW INTERCEPTION MODEL (which works with different time steps)
