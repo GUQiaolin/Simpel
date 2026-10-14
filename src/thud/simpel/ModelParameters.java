@@ -41,6 +41,7 @@ public class ModelParameters
 	public static final String LITTER_REDUCTION_FACTOR = "Litter Reduction factor";
 	public static final String TIMESTEP = "Timestep";
 	public static final String ET_METHOD = "ET method";
+	public static final String HEMISPHERE = "Hemisphere";
 
 	/** Optional keys of the Penman-Monteith (Penman-Monteith) ET method. */
 	public static final List<String> ET_KEYS = Arrays.asList("Albedo", "Surface emissivity", "Vegetation height",
@@ -50,7 +51,7 @@ public class ModelParameters
 	static final Set<String> KNOWN_KEYS = new LinkedHashSet<String>(Arrays.asList(FIELD_CAPACITY_PERCENT,
 			PERMANENT_WILTING_POINT, START_OF_REDUCTION_PERCENT, ROOT_DEPTH, INIT_VALUE_SOIL_PERCENT, LAND_USE,
 			VEGETATION_FRACTION, LAYER_THICKNESS, DRAINAGE_COEFF_B, MAX_DRAINAGE_RATE,
-			GLUGLA_C, INIT_VALUE_LITTER, LITTER_REDUCTION_FACTOR, TIMESTEP, ET_METHOD));
+			GLUGLA_C, INIT_VALUE_LITTER, LITTER_REDUCTION_FACTOR, TIMESTEP, ET_METHOD, HEMISPHERE));
 
 	/** Keys that moved to Land_Use_Parameters.txt, with their column name there. */
 	static final Map<String, String> MOVED_TO_LAND_USE_TABLE = new LinkedHashMap<String, String>();
@@ -87,6 +88,8 @@ public class ModelParameters
 	public final double litterReductionFactor;
 	// method
 	public final String etMethod;                  // HAUDE or PM
+	// site
+	public final boolean southernHemisphere;       // Hemisphere;S shifts the seasonal tables by half a year
 
 	private ModelParameters(Map<String, String> values)
 	{
@@ -118,6 +121,12 @@ public class ModelParameters
 		initialLitter = required(INIT_VALUE_LITTER, 0., 1000.);
 		litterReductionFactor = required(LITTER_REDUCTION_FACTOR, 0., 1000.);
 		etMethod = values.containsKey(ET_METHOD) ? values.get(ET_METHOD).toUpperCase() : "HAUDE";
+		String hemisphere = values.containsKey(HEMISPHERE) ? values.get(HEMISPHERE).toUpperCase() : "N";
+		if (!hemisphere.equals("N") && !hemisphere.equals("S"))
+		{
+			throw new IllegalArgumentException("'" + HEMISPHERE + "' must be N or S, got '" + values.get(HEMISPHERE) + "'");
+		}
+		southernHemisphere = hemisphere.equals("S");
 
 		if (wiltingPointPercent >= fieldCapacityPercent)
 		{

@@ -11,3 +11,4 @@ Max. Drainage Rate;2.88;Interception Max. Drainage Rate (mm/d)
 Init-Value Litter;0;(mm)
 Litter Reduction factor;3;-
 Glugla coeff.;150;-
+Hemisphere;N;N or S. Phenology dates and Haude months are written for the northern hemisphere and shifted by half a year for S

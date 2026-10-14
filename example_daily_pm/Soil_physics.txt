@@ -28,3 +28,4 @@ G6;0.0176;Soil moisture dependence (mm-1)
 TH;40;Upper temperature limit (degC)
 TL;0;Lower temperature limit (degC)
 Kmax;1200;Maximum Kdown (W m-2)
+Hemisphere;N;N or S. Phenology dates and Haude months are written for the northern hemisphere and shifted by half a year for S

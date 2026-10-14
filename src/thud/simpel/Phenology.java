@@ -14,6 +14,9 @@ package thud.simpel;
  * Land_Use_Parameters.txt. The curve is evaluated cyclically, so a season may run across the turn of
  * the year (e.g. green-up in October and senescence in April).
  *
+ * Southern hemisphere: the dates are written as for the northern hemisphere and shifted by half a year
+ * with Hemisphere;S in Soil_physics.txt (see seasonalDay), so the same land-use table works for both.
+ *
  * This class is the place where a dynamic phenology (e.g. responding to drought) can replace the
  * fixed curve later.
  */
@@ -70,6 +73,19 @@ public class Phenology
 			return maximumLai;
 		}
 		return maximumLai + (minimumLai - maximumLai) * ((day - greenUpLength - fullLeafLength) / senescenceLength);
+	}
+
+	/** Days the seasonal tables are shifted in the southern hemisphere. */
+	public static final int SOUTHERN_SHIFT_DAYS = 182;
+
+	/**
+	 * Day of the year in "northern-hemisphere season" terms: unchanged in the north, shifted by half a year
+	 * in the south (1 January in the south corresponds to about 2 July in the north).
+	 */
+	public static double seasonalDay(double dayOfYear, boolean southernHemisphere)
+	{
+		if (!southernHemisphere) return dayOfYear;
+		return Math.floorMod((int) dayOfYear - 1 + SOUTHERN_SHIFT_DAYS, DAYS_PER_CYCLE) + 1;
 	}
 
 	static int daysAfter(int later, int earlier)

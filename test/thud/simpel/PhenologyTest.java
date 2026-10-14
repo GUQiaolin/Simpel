@@ -27,6 +27,17 @@ public class PhenologyTest
 		check("wrapped: during senescence", wrapped.lai(110), 1.75);
 		check("wrapped: winter", wrapped.lai(200), 0.5);
 
+		// southern hemisphere: 1 January behaves like 2 July in the north, 1 July like 30 December
+		check("south: 1 Jan", Phenology.seasonalDay(1, true), 183.);
+		check("south: 1 Jul (day 182)", Phenology.seasonalDay(182, true), 364.);
+		check("south: leap day 366", Phenology.seasonalDay(366, true), 183.);
+		check("north unchanged", Phenology.seasonalDay(100, false), 100.);
+		check("south: LAI in January is the summer maximum", defaults.lai(Phenology.seasonalDay(15, true)), 2.);
+		check("south: LAI in July is the winter minimum", defaults.lai(Phenology.seasonalDay(196, true)), 1.);
+		check("south: Haude month for January is July", HaudeCoefficients.seasonalMonth(1, true), 7.);
+		check("south: Haude month for July is January", HaudeCoefficients.seasonalMonth(7, true), 1.);
+		check("south: Haude month for December is June", HaudeCoefficients.seasonalMonth(12, true), 6.);
+
 		try
 		{
 			new Phenology(1., 2., 121, 300, 200, 250);

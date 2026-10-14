@@ -271,6 +271,11 @@ public class SimpelModel
 		    
 		  // LAI from the default phenology of the land use (see Phenology)
 		  Phenology phenology = landUse.phenology;
+		  boolean southernHemisphere = parameters.southernHemisphere;
+		  if (southernHemisphere)
+		  {
+			  System.out.println("Southern hemisphere: phenology dates and Haude months are shifted by half a year");
+		  }
 		  double landuse_DayDegree = landUse.degreeDay;
 
 		  double ts = timestep * 3600; // timestep from soil physics is given in hours, ts is a conversion to seconds
@@ -354,7 +359,7 @@ public class SimpelModel
 		  double[] haudeStepEtp = null;
 		  if (!usePenmanMonteith && !getReadETFromFile() && timestep < 24.)
 		  {
-			  haudeStepEtp = haudeSubDaily(forcing, haude);
+			  haudeStepEtp = haudeSubDaily(forcing, haude, southernHemisphere);
 		  }
 
 //		  # calculate the rest
@@ -410,11 +415,11 @@ public class SimpelModel
 		      }
 		    }
 //		    # col 7: G LAI
-		    bucket_model[krow][LAI] = phenology.lai(doy);
+		    bucket_model[krow][LAI] = phenology.lai(Phenology.seasonalDay(doy, southernHemisphere));
 
 //		    # col 5: E ETP Coeff (monthly Haude coefficient of the land use)
 		    int month = dates[krow].getMonthValue();
-		    bucket_model[krow][ETP_COEFF] = haude == null ? 0. : haude.forMonth(month);
+		    bucket_model[krow][ETP_COEFF] = haude == null ? 0. : haude.forMonth(month, southernHemisphere);
 		    
 //		    # col 6: F ETP Input
 		    if(readETfromFile) // if(numColumnsInput >= 6) // $kf
@@ -692,7 +697,7 @@ public class SimpelModel
 	}
 
 	/** Haude ETP per sub-daily step: daily value from the row nearest 14:00, distributed over the day. */
-	static double[] haudeSubDaily(Forcing forcing, HaudeCoefficients haude)
+	static double[] haudeSubDaily(Forcing forcing, HaudeCoefficients haude, boolean southernHemisphere)
 	{
 		LocalDateTime[] dates = forcing.dates;
 		int rows = forcing.size();
@@ -710,7 +715,7 @@ public class SimpelModel
 			{
 				if (Math.abs(dates[i].getHour() - HAUDE_HOUR) < Math.abs(dates[haudeRow].getHour() - HAUDE_HOUR)) haudeRow = i;
 			}
-			double coefficient = haude.forMonth(day.getMonthValue());
+			double coefficient = haude.forMonth(day.getMonthValue(), southernHemisphere);
 			double dailyEtp = haudeDailyEtp(coefficient, forcing.airTemperature[haudeRow], forcing.relativeHumidity[haudeRow]);
 
 			double kdownSum = 0.;
