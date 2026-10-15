@@ -494,15 +494,19 @@ public class SimpelModel
 		    double intc_drainage;
 		    if(bucket_model[krow][I_CAP] <= 0.)
 		    {
-		    	// no canopy storage (LAI or layer thickness 0): intercepted water can evaporate within the
-		    	// step, the rest drains; the formulas below would divide by the zero capacity
-		    	bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][ETP_INPUT], intc_stor_guess);
-		    	intc_drainage = intc_stor_guess - bucket_model[krow][INT_ETI_LEAF];
+		    	// no canopy storage (LAI or layer thickness 0): nothing is intercepted, all water passes through
+		    	// (the formulas below would also divide by the zero capacity)
+		    	bucket_model[krow][INT_ETI_LEAF] = 0.;
+		    	intc_drainage = intc_stor_guess;
 		    }
 		    else
 		    {
+		    // Saturated canopy: at most the water the canopy can hold (I-Cap) evaporates in the step, as in the
+		    // original SIMPEL spreadsheet (min(I-Cap, ETP)); water above the capacity drains. Evaporating up to the
+		    // full ETP from all intercepted rain let even a nearly leafless canopy evaporate the whole demand on
+		    // every rain day.
 		    if(intc_stor_guess > bucket_model[krow][I_CAP])
-			    bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][ETP_INPUT],intc_stor_guess); // real evaporation
+			    bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][ETP_INPUT],bucket_model[krow][I_CAP]);
     		    else
 			    bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][ETP_INPUT]*intc_stor_guess/ bucket_model[krow][I_CAP], intc_stor_guess);
 //		    # col 10: J I-Bal.: Temp calcalation
