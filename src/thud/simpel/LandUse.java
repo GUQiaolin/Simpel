@@ -35,9 +35,10 @@ public class LandUse
 		this.name = name;
 		double minimumLai = table.required(name, "MinLAI", 0., 20.);
 		double maximumLai = table.required(name, "MaxLAI", 0., 20.);
-		if (maximumLai <= 0. || minimumLai > maximumLai)
+		// MaxLAI = 0 is allowed: a non-vegetated surface (no interception, no transpiration with PM)
+		if (minimumLai > maximumLai)
 		{
-			throw new IllegalArgumentException(FILE_NAME + ": land use '" + name + "' needs 0 <= MinLAI <= MaxLAI and MaxLAI > 0 (got "
+			throw new IllegalArgumentException(FILE_NAME + ": land use '" + name + "' needs 0 <= MinLAI <= MaxLAI (got "
 					+ minimumLai + ", " + maximumLai + ")");
 		}
 		this.phenology = new Phenology(minimumLai, maximumLai,

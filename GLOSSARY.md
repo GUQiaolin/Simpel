@@ -101,7 +101,7 @@ given (optional columns only). The file itself documents its columns.
 | Column | Meaning | Unit | Required |
 |---|---|---|---|
 | `Land_use` | Name used in `Land use;…` | – | yes |
-| `MinLAI`, `MaxLAI` | Leaf area index outside / inside the growing season | m² m⁻² | yes (0 ≤ MinLAI ≤ MaxLAI, MaxLAI > 0) |
+| `MinLAI`, `MaxLAI` | Leaf area index outside / inside the growing season | m² m⁻² | yes (0 ≤ MinLAI ≤ MaxLAI; MaxLAI 0 = non-vegetated) |
 | `DegreeDay` | Snow melt per degree above 0 °C | mm °C⁻¹ day⁻¹ | yes |
 | `DirectRunoff` | Share of the water passing the litter layer that runs off directly | % | yes |
 | `LitterCap` | Storage capacity of the litter layer | mm | yes |
@@ -127,8 +127,11 @@ reduction and initial water (all vol-% × root depth / 10, in mm), and the Glugl
 the model used to divide by zero and return NaN for every value. For (nearly) sealed surfaces such as
 urban, use a small value, e.g. 1 cm (the `urban` row does this).
 
-SIMPEL models one pervious surface over one soil store. There is no separate subsoil below the root zone
-and no sealed fraction: water that does not fit into the root zone becomes surface runoff or seepage.
+SIMPEL models one surface over one soil store. There is no separate subsoil below the root zone and no
+mixed sealed/pervious fraction within a run: water that does not fit into the root zone becomes surface
+runoff or seepage. A fully sealed surface is set up as a land use with `MinLAI` = `MaxLAI` = 0 (no
+interception, no transpiration), `DirectRunoff` 100 and a small `RootDepth` (e.g. 1 cm): all precipitation
+then becomes surface runoff. The `urban` row (LAI 0.1–0.5, direct runoff 50 %) is a partly sealed surface.
 
 ### Phenology (LAI)
 

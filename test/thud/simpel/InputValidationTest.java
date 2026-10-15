@@ -36,6 +36,7 @@ public class InputValidationTest
 		expectTableError(example, "urban         0.10    0.50    5.00       50            0.00       1 ",
 				"urban         0.10    0.50    5.00       50            0.00       0 ", "Root depth must be above 0", "urban");
 		expectRuns(example, "urban");
+		expectRunsWithExtraLandUse(example, "sealed        0.0     0.0     5.00       100           0.00       1          -             -           -                -", "sealed");
 
 		expectForcingError(example, line -> line.startsWith("05.01.1995") ? line.replace("90.1", "140") : line,
 				"outside the plausible range");
@@ -91,6 +92,34 @@ public class InputValidationTest
 			if (line.contains("NaN"))
 			{
 				fail("land use " + landUse + ": NaN in output line " + line.substring(0, Math.min(40, line.length())));
+				return;
+			}
+		}
+	}
+
+	/** Adds a row to Land_Use_Parameters.txt (and a Haude row copied from urban) and expects a run without NaN. */
+	static void expectRunsWithExtraLandUse(Path example, String row, String landUse) throws IOException
+	{
+		Path dir = copyExample(example);
+		Files.write(dir.resolve("Land_Use_Parameters.txt"), (row + "\n").getBytes(StandardCharsets.UTF_8),
+				java.nio.file.StandardOpenOption.APPEND);
+		for (String line : Files.readAllLines(dir.resolve("Haude_Coefficients.txt"), StandardCharsets.UTF_8))
+		{
+			if (line.startsWith("urban "))
+			{
+				Files.write(dir.resolve("Haude_Coefficients.txt"), (line.replaceFirst("^urban ", landUse + " ") + "\n")
+						.getBytes(StandardCharsets.UTF_8), java.nio.file.StandardOpenOption.APPEND);
+			}
+		}
+		replaceInFile(dir.resolve("Soil_physics.txt"), line -> line.startsWith("Land use;") ? "Land use;" + landUse + ";" : line);
+		SimpelModel model = new SimpelModel();
+		model.setDirectory(dir.toString());
+		model.process();
+		for (String line : Files.readAllLines(dir.resolve("SIMPLE_bucket_model.csv"), StandardCharsets.UTF_8))
+		{
+			if (line.contains("NaN"))
+			{
+				fail("land use " + landUse + ": NaN in output");
 				return;
 			}
 		}

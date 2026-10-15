@@ -89,7 +89,8 @@ public class PenmanMonteithEvaporation
 	public double surfaceConductance(double kdown, double airTemperature, double relativeHumidity, double pressure,
 			double lai, double maxLai, double soilMoistureDeficit, double soilMoistureDeficitAtWilt)
 	{
-		double gLai = Math.min(1., Math.max(0., lai / maxLai));
+		// no leaves (MaxLAI 0, non-vegetated surface): no transpiration
+		double gLai = maxLai > 0. ? Math.min(1., Math.max(0., lai / maxLai)) : 0.;
 
 		double k = Math.max(0., Math.min(kdown, maxKdown));
 		double gKdown = (k / (kdownShapeG2 + k)) / (maxKdown / (kdownShapeG2 + maxKdown));
