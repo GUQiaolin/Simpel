@@ -26,6 +26,12 @@ public class BucketTest
 		double bigSeepage = SimpelModel.gluglaSeepage(300., 2.5, 1.2, 1.5, 1.);
 		check("seepage capped at FC - PWP", bigSeepage, 2.5 - 1.2, 1e-12);
 
+		// Litter (beech: capacity 1.5 mm, factor 3, daily): MIN(demand; MIN(cap; content + P) / factor)
+		check("litter, water above capacity", SimpelModel.litterEvaporation(4., 1.5, 3., 3.), 0.5, 1e-12);
+		check("litter, water below capacity", SimpelModel.litterEvaporation(4., 1.5, 0.6, 3.), 0.2, 1e-12);
+		check("litter, demand limits", SimpelModel.litterEvaporation(0.1, 1.5, 3., 3.), 0.1, 1e-12);
+		check("litter, no capacity", SimpelModel.litterEvaporation(4., 0., 3., 3.), 0., 1e-12);
+
 		if (failures > 0)
 		{
 			System.out.println("BucketTest FAILED: " + failures);

@@ -542,8 +542,8 @@ public class SimpelModel
 		    if(krow==0)
 		    {
 //		      # col 13: M ETi Litter
-		      double[] temp = new double[]{Cap_Litter,(Init_Value_Litter+bucket_model[krow][I_PREC])/Litter_Reduction_factor_dt};
-		      bucket_model[krow][I_ETI_LITTER] = Math.min(bucket_model[krow][I_REM],min(temp));
+		      bucket_model[krow][I_ETI_LITTER] = litterEvaporation(bucket_model[krow][I_REM], Cap_Litter,
+		    		  Init_Value_Litter + bucket_model[krow][I_PREC], Litter_Reduction_factor_dt);
 		      
 //		      # col 14: N Bilanz (needed for col 13 & 15)
 		      bucket_model[krow][BILANZ] = Init_Value_Litter + bucket_model[krow][I_PREC] - bucket_model[krow][I_ETI_LITTER];
@@ -561,8 +561,8 @@ public class SimpelModel
 		    else
 		    {//# rest of the rows
 //		      # col 13: M ETi Litter
-		      double[] temp = new double[]{Cap_Litter, (bucket_model[krow-1][CONTENT]+bucket_model[krow][I_PREC])/Litter_Reduction_factor_dt};
-		      bucket_model[krow][I_ETI_LITTER] = Math.min(bucket_model[krow][I_REM],min(temp));
+		      bucket_model[krow][I_ETI_LITTER] = litterEvaporation(bucket_model[krow][I_REM], Cap_Litter,
+		    		  bucket_model[krow-1][CONTENT] + bucket_model[krow][I_PREC], Litter_Reduction_factor_dt);
 		      
 //		      # col 14: N Bilanz (needed for col 13 & 15)
 		      bucket_model[krow][BILANZ] = bucket_model[krow-1][CONTENT]  + bucket_model[krow][I_PREC] - bucket_model[krow][I_ETI_LITTER];
@@ -777,6 +777,17 @@ public class SimpelModel
 		pm.lowerTemperatureTL = parameters.optional("TL", pm.lowerTemperatureTL);
 		pm.maxKdown = parameters.optional("Kmax", pm.maxKdown);
 		return pm;
+	}
+
+	/**
+	 * Evaporation from the litter layer as in the SIMPEL spreadsheet: MIN(remaining demand; MIN(capacity;
+	 * content + throughfall) / factor). The reduction factor divides the smaller of the capacity and the
+	 * available water; before, it divided only the water (min(cap, water / factor)), so the litter
+	 * evaporated up to the full capacity per step. The factor is already scaled to the time step.
+	 */
+	static double litterEvaporation(double remainingDemand, double capacity, double availableWater, double reductionFactor)
+	{
+		return Math.min(remainingDemand, Math.min(capacity, availableWater) / reductionFactor);
 	}
 
 	/**
