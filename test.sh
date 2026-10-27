@@ -10,8 +10,11 @@ for t in bin/thud/simpel/*Test.class; do
 	java -cp bin thud.simpel.$name
 done
 java -cp bin thud.simpel.SimpelModel example/ > /dev/null
-java -cp bin thud.simpel.RegressionTest example/output/SIMPLE_bucket_model.csv test/reference/daily_example.csv 1e-9
+daily_output=$(find example -maxdepth 1 -type d -name 'output_[0-9]*' -print | sort | tail -n 1)
+java -cp bin thud.simpel.RegressionTest "$daily_output/SIMPLE_bucket_model.csv" test/reference/daily_example.csv 1e-9
 java -cp bin thud.simpel.SimpelModel example_hourly/ > /dev/null
-java -cp bin thud.simpel.RegressionTest example_hourly/output/SIMPLE_bucket_model.csv test/reference/hourly_pm_example.csv 1e-9
+hourly_output=$(find example_hourly -maxdepth 1 -type d -name 'output_[0-9]*' -print | sort | tail -n 1)
+java -cp bin thud.simpel.RegressionTest "$hourly_output/SIMPLE_bucket_model.csv" test/reference/hourly_pm_example.csv 1e-9
 java -cp bin thud.simpel.SimpelModel example_daily_pm/ > /dev/null
-java -cp bin thud.simpel.RegressionTest example_daily_pm/output/SIMPLE_bucket_model.csv test/reference/daily_pm_example.csv 1e-9
+daily_pm_output=$(find example_daily_pm -maxdepth 1 -type d -name 'output_[0-9]*' -print | sort | tail -n 1)
+java -cp bin thud.simpel.RegressionTest "$daily_pm_output/SIMPLE_bucket_model.csv" test/reference/daily_pm_example.csv 1e-9

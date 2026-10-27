@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.UnaryOperator;
 
@@ -68,7 +69,7 @@ public class InputValidationTest
 		double bareEvaporation = columnSum(bare, "ETa");
 		if (!(bareEvaporation > 1.)) fail("PM on bare soil: expected soil evaporation from the gap, got ETa sum " + bareEvaporation);
 
-		// The run log in output/ also records an error that stops the run
+		// The run log also records an error that stops the run
 		Path broken = copyExample(example);
 		replaceInFile(broken.resolve("Soil_physics.txt"), line -> line.startsWith("Root Depth;100") ? "Root Depth;0;" : line);
 		expectError(broken, "must be above 0 cm", "log of a failed run");
@@ -116,7 +117,7 @@ public class InputValidationTest
 		SimpelModel model = new SimpelModel();
 		model.setDirectory(dir.toString());
 		model.process();
-		for (String line : Files.readAllLines(dir.resolve(SimpelModel.OUTPUT_FOLDER).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8))
+		for (String line : Files.readAllLines(outputDirectory(dir).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8))
 		{
 			if (line.contains("NaN"))
 			{
@@ -144,7 +145,7 @@ public class InputValidationTest
 		SimpelModel model = new SimpelModel();
 		model.setDirectory(dir.toString());
 		model.process();
-		for (String line : Files.readAllLines(dir.resolve(SimpelModel.OUTPUT_FOLDER).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8))
+		for (String line : Files.readAllLines(outputDirectory(dir).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8))
 		{
 			if (line.contains("NaN"))
 			{
@@ -157,7 +158,7 @@ public class InputValidationTest
 	/** Sum of one output column. */
 	static double columnSum(Path dir, String column) throws IOException
 	{
-		List<String> lines = Files.readAllLines(dir.resolve(SimpelModel.OUTPUT_FOLDER).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8);
+		List<String> lines = Files.readAllLines(outputDirectory(dir).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8);
 		int index = java.util.Arrays.asList(lines.get(0).split("\t")).indexOf(column);
 		double sum = 0.;
 		for (String line : lines.subList(1, lines.size()))
@@ -167,21 +168,26 @@ public class InputValidationTest
 		return sum;
 	}
 
-	/** The (single) run log in the output folder must contain this text. */
+	/** The run log in the most recent output folder must contain this text. */
 	static void expectLogContains(Path dir, String expected) throws IOException
 	{
-		try (java.util.stream.Stream<Path> files = Files.list(dir.resolve(SimpelModel.OUTPUT_FOLDER)))
+		Path log = outputDirectory(dir).resolve("SIMPEL_log.txt");
+		if (Files.exists(log) && new String(Files.readAllBytes(log), StandardCharsets.UTF_8).contains(expected))
 		{
-			for (Path file : (Iterable<Path>) files::iterator)
-			{
-				if (file.getFileName().toString().startsWith("SIMPEL_log_")
-						&& new String(Files.readAllBytes(file), StandardCharsets.UTF_8).contains(expected))
-				{
-					return;
-				}
-			}
+			return;
 		}
 		fail("no run log in " + dir + " contains '" + expected + "'");
+	}
+
+	static Path outputDirectory(Path dir) throws IOException
+	{
+		try (java.util.stream.Stream<Path> paths = Files.list(dir))
+		{
+			return paths.filter(Files::isDirectory)
+					.filter(path -> path.getFileName().toString().matches(SimpelModel.OUTPUT_FOLDER + "_\\d{8}_\\d{6}"))
+					.max(Comparator.comparing(path -> path.getFileName().toString()))
+					.orElseThrow(() -> new IOException("No timestamped output folder in " + dir));
+		}
 	}
 
 	/** The run in this directory must finish without an error. */
@@ -192,8 +198,17 @@ public class InputValidationTest
 		try
 		{
 			model.process();
+			Path output = outputDirectory(dir);
+			if (!Files.isRegularFile(output.resolve("SIMPEL_log.txt")))
+			{
+				fail(description + ": expected SIMPEL_log.txt in " + output);
+			}
 		}
 		catch (RuntimeException e)
+		{
+			fail(description + ": " + e.getMessage());
+		}
+		catch (IOException e)
 		{
 			fail(description + ": " + e.getMessage());
 		}

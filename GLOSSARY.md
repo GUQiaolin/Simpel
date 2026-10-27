@@ -170,7 +170,7 @@ conductance), not on LAI or the interception capacity.
   reduction is not applied a second time. Dew (negative QE) is not counted.
 - **ET0 from file**: an `ET0` column replaces the demand; soil ET as with `HAUDE`.
 
-## Output columns (`output/SIMPLE_bucket_model.csv`)
+## Output columns (`output_<yyyyMMdd_HHmmss>/SIMPLE_bucket_model.csv`)
 
 The columns (and the matching constants in `SimpelModel.java`) keep the names of the original SIMPEL
 spreadsheet columns, so results can be compared with the Excel and R versions. Fluxes are in mm per time

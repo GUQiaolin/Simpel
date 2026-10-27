@@ -32,7 +32,7 @@ Compile the source and call java on the command line with the arguments thud.sim
 java -cp bin thud.simpel.SimpelModel <input directory> [readET|dontReadET]
 ```
 
-The results (`SIMPLE_bucket_model.csv`, overwritten on each run) and a log of the run (`SIMPEL_log_<yyyyMMdd_HHmmss>.txt`, everything printed to the console including errors) are written to the folder `output/` of the input directory.
+The results (`SIMPLE_bucket_model.csv`) and a log of the run (`SIMPEL_log.txt`, everything printed to the console including errors) are written to a timestamped folder `output_<yyyyMMdd_HHmmss>/` in the input directory. Each run gets its own folder.
 
 Examples:
 
@@ -144,8 +144,8 @@ New features:
 * **`Infiltration fraction`** (optional, default 0.25). The share of the soil deficit that may infiltrate
   per day used to be a fixed constant. It decides between infiltration and surface runoff, so it is now a
   parameter that can be tested for sensitivity.
-* **`output/` folder and run log.** Results and `SIMPEL_log_<date>_<time>.txt` (the console output of the
-  run, including errors) are written to `<input dir>/output/`.
+* **Timestamped results folder and run log.** Results and `SIMPEL_log.txt` (the console output of the
+  run, including errors) are written to `<input dir>/output_<yyyyMMdd_HHmmss>/`.
 
 * **Sensitivity tool** (`sensitivity.sh`): see "Sensitivity of the water fluxes".
 
@@ -169,4 +169,3 @@ Hörmann, G. (1997): SIMPEL - ein einfaches, benutzerfreundliches Bodenwassermod
 Hörmann, G., X. Zhang and N. Fohrer (2007): Comparison of a simple and a spatially distributed hydrologic model for the simulation of a lowland catchment in Northern Germany. Ecological Modelling, 209 (1): 21-28. 
 Järvi, L., Grimmond, C. S. B. and Christen, A. (2011): The Surface Urban Energy and Water Balance Scheme (SUEWS): Evaluation in Los Angeles and Vancouver. J. Hydrol. 411: 219-237, doi:10.1016/j.jhydrol.2011.10.001
 Rutter, A. J., Kershaw, K. A., Robins, P. C., and Morton, A. J. (1971). A predictive model of rainfall interception in forests, 1. Derivation of the model from observations in a plantation of Corsican pine. Agr. Meteorol. 9, 367–384.
-

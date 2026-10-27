@@ -76,7 +76,7 @@ public class SimpelModel
     private Boolean readETfromFile = null; // null: decide from the ET0 column in Global_Input.txt
     private String commandLine = "(called from Java)";
 
-    // Results and the run log are written into this folder of the input directory
+    // Base name for the per-run results and log folder in the input directory
     public final static String OUTPUT_FOLDER = "output";
     public final static String OUTPUT_FILE = "SIMPLE_bucket_model.csv";
 
@@ -101,13 +101,14 @@ public class SimpelModel
 	/**
 	 * Runs the model on the input directory. The results and a log of everything printed to the console
 	 * (System.out and System.err, including an error that stops the run) are written to the folder
-	 * output/ of the input directory: SIMPLE_bucket_model.csv (overwritten) and SIMPEL_log_<date>_<time>.txt.
+	 * output_<yyyyMMdd_HHmmss>/ of the input directory: SIMPLE_bucket_model.csv and SIMPEL_log.txt.
 	 */
 	public void process()
 	{
-		Path outputDirectory = Paths.get(directory, OUTPUT_FOLDER);
 		LocalDateTime start = LocalDateTime.now();
-		Path log = outputDirectory.resolve("SIMPEL_log_" + start.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".txt");
+		String timestamp = start.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+		Path outputDirectory = Paths.get(directory, OUTPUT_FOLDER + "_" + timestamp);
+		Path log = outputDirectory.resolve("SIMPEL_log.txt");
 		PrintStream console = System.out;
 		PrintStream consoleErr = System.err;
 		try (OutputStream logFile = Files.newOutputStream(Files.createDirectories(outputDirectory).resolve(log.getFileName())))
