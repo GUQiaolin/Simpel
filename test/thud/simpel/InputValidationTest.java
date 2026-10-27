@@ -47,6 +47,16 @@ public class InputValidationTest
 				"is not a number");
 		expectForcingError(example, line -> line.startsWith("06.01.1995") ? null : line, "not evenly spaced");
 
+		// PM run whose forcing also has an ET0 column: ET0 is ignored instead of stopping the run
+		Path pmWithEt0 = copyExample(Paths.get("example_hourly"));
+		replaceInFile(pmWithEt0.resolve("Global_Input.txt"), line -> line.trim().isEmpty() ? line : line + (line.startsWith("Date") ? "\tET0" : "\t0.1"));
+		expectRunsIn(pmWithEt0, "PM with an ET0 column");
+		// ET0 from file does not need Haude_Coefficients.txt
+		Path et0WithoutHaude = copyExample(example);
+		replaceInFile(et0WithoutHaude.resolve("Global_Input.txt"), line -> line.trim().isEmpty() ? line : line + (line.startsWith("Date") ? "\tET0" : "\t1.0"));
+		Files.delete(et0WithoutHaude.resolve("Haude_Coefficients.txt"));
+		expectRunsIn(et0WithoutHaude, "ET0 from file without Haude_Coefficients.txt");
+
 		if (failures > 0)
 		{
 			System.out.println("InputValidationTest FAILED: " + failures);
@@ -123,6 +133,21 @@ public class InputValidationTest
 				fail("land use " + landUse + ": NaN in output");
 				return;
 			}
+		}
+	}
+
+	/** The run in this directory must finish without an error. */
+	static void expectRunsIn(Path dir, String description)
+	{
+		SimpelModel model = new SimpelModel();
+		model.setDirectory(dir.toString());
+		try
+		{
+			model.process();
+		}
+		catch (RuntimeException e)
+		{
+			fail(description + ": " + e.getMessage());
 		}
 	}
 

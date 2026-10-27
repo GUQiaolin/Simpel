@@ -1,9 +1,8 @@
 package thud.simpel;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -106,10 +105,15 @@ public class SimpelModel
 		{
 			throw new UncheckedIOException(e);
 		}
-		// Without a command-line choice, read ET0 whenever the column is present
+		// Without a command-line choice, read ET0 whenever the column is present, except with ET method PM
+		// (which computes its own demand and cannot be combined with ET0 from file)
 		if (readETfromFile == null)
 		{
-			readETfromFile = forcing.hasEt0();
+			readETfromFile = forcing.hasEt0() && !ModelParameters.PM.equals(parameters.etMethod);
+			if (forcing.hasEt0() && !readETfromFile)
+			{
+				System.out.println("Note: the ET0 column of Global_Input.txt is ignored with ET method " + ModelParameters.PM);
+			}
 		}
 		if (readETfromFile && !forcing.hasEt0())
 		{
@@ -126,8 +130,9 @@ public class SimpelModel
 						+ "; see GLOSSARY.md");
 			}
 			landUse = LandUse.read(Paths.get(directory, LandUse.FILE_NAME), parameters.landUse);
-			// Haude coefficients are only needed for ET method HAUDE (with PM they only fill ETP_Coeff)
-			if (ModelParameters.HAUDE.equals(parameters.etMethod) || Files.exists(Paths.get(directory, HaudeCoefficients.FILE_NAME)))
+			// Haude coefficients are only needed for ET method HAUDE without ET0 from file (otherwise they only fill ETP_Coeff)
+			boolean haudeNeeded = ModelParameters.HAUDE.equals(parameters.etMethod) && !readETfromFile;
+			if (haudeNeeded || Files.exists(Paths.get(directory, HaudeCoefficients.FILE_NAME)))
 			{
 				haude = HaudeCoefficients.read(Paths.get(directory, HaudeCoefficients.FILE_NAME), parameters.landUse);
 			}
@@ -346,6 +351,10 @@ public class SimpelModel
 		  // Haude is a daily method based on the 14:00 temperature and humidity. For sub-daily steps the
 		  // daily value is computed from the row at 14:00 (or the nearest hour) and spread over the day's
 		  // steps in proportion to KDOWN, or evenly when KDOWN is missing or the day is incomplete.
+		  if (getReadETFromFile())
+		  {
+			  System.out.println("Reading external ETP from file...");
+		  }
 		  double[] haudeStepEtp = null;
 		  if (!usePenmanMonteith && !getReadETFromFile() && timestep < 24.)
 		  {
@@ -416,12 +425,7 @@ public class SimpelModel
 		    {   
 		    	  //# check if input variable is given
 //		          # if yes, use given ETP0
-		    	 double et0_1 = forcing.et0[krow];
-			      bucket_model[krow][ETP_INPUT] = et0_1;
-			      if(krow==2)
-			      {
-			    	  System.out.println("Reading external ETP from file...");
-			      }
+		    	 bucket_model[krow][ETP_INPUT] = forcing.et0[krow];
 		    }
 		    else if(usePenmanMonteith)
 		    {
@@ -810,22 +814,16 @@ public class SimpelModel
 	}
 	
 	public void writeFile(String text, String filename)
-	{	
-		FileOutputStream out; 
-		PrintStream p; 
+	{
 		try
 		{
-			out = new FileOutputStream(filename);
-			p = new PrintStream(out);
-			p.println(text);
-			p.close();
-		} catch (Exception e)
-		{
-			System.err.println("Error writing to file");
+			Files.write(Paths.get(filename), (text + linefeed).getBytes(StandardCharsets.UTF_8));
 		}
-		p=null;
-		out=null;
-	}	   
+		catch (IOException e)
+		{
+			throw new UncheckedIOException("Cannot write " + filename, e);
+		}
+	}
 	public void write_csv(double[][] bucket_model, String output)
 	{
 //		Date	Precipitation	Snow_Water_Equi	Snow_melt+rain	ETP_Coeff	ETP_Input	LAI	I-Cap	Int. ETi(leaf)	I-Bal	I-Prec	I-Rem	I_ETi(litter)	Bilanz	Content	S-REstn	Inf-Limit	P-linf	Rest-ETA	Balance_soil	ETa	ET-Balance	Seepage	Storage	Surface_runoff	Runoff_total	I-Leaf	I-Litter	ETaTotal
