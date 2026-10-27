@@ -1,3 +1,6 @@
 SIMPLE_bucket_model.csv
 *.class
 bin/
+.idea/
+*.bundle
+output/
