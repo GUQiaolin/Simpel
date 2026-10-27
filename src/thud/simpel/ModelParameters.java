@@ -42,6 +42,7 @@ public class ModelParameters
 	public static final String TIMESTEP = "Timestep";
 	public static final String ET_METHOD = "ET method";
 	public static final String HEMISPHERE = "Hemisphere";
+	public static final String INFILTRATION_FRACTION = "Infiltration fraction";
 
 	/** Optional keys of the PM ET method. */
 	public static final List<String> ET_KEYS = Arrays.asList("Albedo", "Surface emissivity", "Vegetation height",
@@ -53,7 +54,7 @@ public class ModelParameters
 	static final Set<String> KNOWN_KEYS = new LinkedHashSet<String>(Arrays.asList(FIELD_CAPACITY_PERCENT,
 			PERMANENT_WILTING_POINT, START_OF_REDUCTION_PERCENT, ROOT_DEPTH, INIT_VALUE_SOIL_PERCENT, LAND_USE,
 			VEGETATION_FRACTION, LAYER_THICKNESS, DRAINAGE_COEFF_B, MAX_DRAINAGE_RATE,
-			GLUGLA_C, INIT_VALUE_LITTER, LITTER_REDUCTION_FACTOR, TIMESTEP, ET_METHOD, HEMISPHERE));
+			GLUGLA_C, INIT_VALUE_LITTER, LITTER_REDUCTION_FACTOR, TIMESTEP, ET_METHOD, HEMISPHERE, INFILTRATION_FRACTION));
 
 	/** Keys that moved to Land_Use_Parameters.txt, with their column name there. */
 	static final Map<String, String> MOVED_TO_LAND_USE_TABLE = new LinkedHashMap<String, String>();
@@ -80,6 +81,7 @@ public class ModelParameters
 	private String rootDepthSource = "Soil_physics.txt";
 	public final double initialSoilPercent;
 	public final double gluglaCoefficient;
+	public final double infiltrationFraction;      // share of the soil deficit (FC - storage) that may infiltrate per day
 	// vegetation and surface
 	public final String landUse;
 	public final double vegetationFraction;
@@ -120,6 +122,7 @@ public class ModelParameters
 		rootDepth = soilRootDepth;
 		initialSoilPercent = required(INIT_VALUE_SOIL_PERCENT, 0., 100.);
 		gluglaCoefficient = required(GLUGLA_C, 0., 1e6);
+		infiltrationFraction = optional(INFILTRATION_FRACTION, SimpelModel.INFILTRATION_FRACTION_PER_DAY, 0., 1.);
 		landUse = requiredText(LAND_USE);
 		vegetationFraction = required(VEGETATION_FRACTION, 0., 1.);
 		layerThickness = required(LAYER_THICKNESS, 0., 10.);

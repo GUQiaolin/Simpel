@@ -59,6 +59,7 @@ for likely typos), and so do keys given twice.
 | `Root Depth` | Depth of the soil water store (see "Root depth" below) | cm | > 0; overridden by `RootDepth` in `Land_Use_Parameters.txt` if given there |
 | `Init-Value Soil %` | Initial water content | vol-% | 0 – `Field Capacity %` |
 | `Glugla coeff.` | Coefficient c of the Glugla seepage law; λ = c / (root depth in mm)² | – | ≥ 0 |
+| `Infiltration fraction` | Optional. Share of the soil deficit (field capacity − storage) that may infiltrate per day, scaled to the step length; the rest of the water reaching the soil surface runs off | – | 0 – 1, default 0.25 |
 
 **Land use and canopy.**
 

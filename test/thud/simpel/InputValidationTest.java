@@ -28,6 +28,7 @@ public class InputValidationTest
 		expectSoilError(example, "Start of Reduction %;20", "Start of Reduction %;12", "must be above the wilting point");
 		expectSoilError(example, "Init-Value Soil %;20", "Init-Value Soil %;30", "must be at most 'Field Capacity %'");
 		expectSoilAppendError(example, "albedo;0.2;typo of Albedo", "did you mean 'Albedo'");
+		expectSoilAppendError(example, "Infiltration fraction;1.5;too large", "outside 0.0 to 1.0");
 		expectSoilAppendError(example, "Root Depth;50;duplicate", "twice");
 		expectSoilAppendError(example, "Minimum LAI;1;old key", "moved to Land_Use_Parameters.txt");
 		expectSoilAppendError(example, "OHM a1;0.32;old key", "storage heat term (OHM) was removed");

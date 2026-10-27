@@ -53,7 +53,8 @@ public class SimpelModel
     public final static int NUMBER_OF_COLUMNS=36;
     
     public final static double SECONDS_PER_DAY = 86400.;
-    // Fraction of the soil water deficit (field capacity minus storage) that can infiltrate per day
+    // Default fraction of the soil water deficit (field capacity minus storage) that can infiltrate per day;
+    // set with "Infiltration fraction" in Soil_physics.txt
     public final static double INFILTRATION_FRACTION_PER_DAY = 0.25;
     // Upper limit of the Haude potential evapotranspiration
     public final static double HAUDE_MAX_ETP_PER_DAY = 7.;   // mm/day
@@ -175,6 +176,7 @@ public class SimpelModel
 		double Direct_runoff_factor=landUse.directRunoffFactor;
 		double Glugla_Coeff_c=parameters.gluglaCoefficient;
 		double Lambda=parameters.gluglaLambda();
+		double Infiltration_fraction=parameters.infiltrationFraction;
 		double Cap_Litter=landUse.litterCapacity;
 		double Init_Value_Litter=parameters.initialLitter;
 		double Litter_Reduction_factor=parameters.litterReductionFactor;
@@ -218,6 +220,7 @@ public class SimpelModel
 		System.out.println("Litter Reduction factor "+String.format("%,.2f", Litter_Reduction_factor)+"");
 		System.out.println("Direct runoff factor: "+String.format("%,.2f", Direct_runoff_factor)+"");
 		System.out.println("Coefficient c (Glugla): "+String.format("%,.2f", Glugla_Coeff_c)+"");
+		System.out.println("Infiltration fraction: "+String.format("%,.2f", Infiltration_fraction)+" of the soil deficit per day");
 
 		System.out.println("\nDerived values");
 		System.out.println("Field Capacity: "+String.format("%,.2f", Field_Capacity)+" mm");
@@ -510,7 +513,7 @@ public class SimpelModel
 		    double prevStorage = krow==0 ? Init_Value_Soil : bucket_model[krow-1][STORAGE];
 //		    # col 17: Q Inf-Limit
 		    // infiltration limit per time step: a fixed fraction of the soil deficit per day, scaled to the step length
-		    bucket_model[krow][INF_LIMIT] = (Field_Capacity-prevStorage)*INFILTRATION_FRACTION_PER_DAY*nt;
+		    bucket_model[krow][INF_LIMIT] = (Field_Capacity-prevStorage)*Infiltration_fraction*nt;
 //		    # col 18: R P-Inf
 		    bucket_model[krow][P_LINF] = Math.min(bucket_model[krow][S_RESTN],bucket_model[krow][INF_LIMIT])*(1.-Direct_runoff_factor/100.);
 //		    # col 19: S S-Rest
