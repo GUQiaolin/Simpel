@@ -3,4 +3,5 @@ bin/
 .idea/
 *.bundle
 output/
+output_*/
 SIMPLE_bucket_model.csv

@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -24,10 +25,10 @@ import java.util.stream.Stream;
  *
  * Usage: java thud.simpel.SensitivityRun <input directory> [factor ...]   (default factors 0.5 1.5)
  *
- * Writes <input directory>/output/sensitivity_oat.csv: for each run the sums over the run of the potential
- * ET (ETP_Input, ETP_dry and its parts), the actual ET terms, seepage and runoff, the final soil storage, and
- * the change against the base run in %. Prints a ranking by the largest change of ETaTotal, Seepage and
- * Runoff_total, and flags a mean potential ET outside 0 - 10 mm/day.
+ * Writes <input directory>/output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv: for each run the sums over the run of
+ * the potential ET (ETP_Input, ETP_dry and its parts), the actual ET terms, seepage and runoff, the final soil
+ * storage, and the change against the base run in %. Prints a ranking by the largest change of ETaTotal,
+ * Seepage and Runoff_total, and flags a mean potential ET outside 0 - 10 mm/day.
  */
 public class SensitivityRun
 {
@@ -105,6 +106,7 @@ public class SensitivityRun
 		Path input = Paths.get(args[0]);
 		double[] factors = args.length > 1 ? Arrays.stream(args, 1, args.length).mapToDouble(Double::parseDouble).toArray()
 				: new double[] { 0.5, 1.5 };
+		LocalDateTime start = LocalDateTime.now();
 
 		Map<String, String> soil = readSoil(input);
 		String landUse = soil.get("Land use");
@@ -176,7 +178,8 @@ public class SensitivityRun
 			}
 		}
 
-		Path output = input.resolve(SimpelModel.OUTPUT_FOLDER).resolve("sensitivity_oat.csv");
+		Path outputDirectory = SimpelModel.outputDirectory(input, start);
+		Path output = outputDirectory.resolve("sensitivity_oat.csv");
 		Files.createDirectories(output.getParent());
 		Files.write(output, csv.toString().getBytes(StandardCharsets.UTF_8));
 
@@ -259,8 +262,17 @@ public class SensitivityRun
 			System.setOut(console);
 		}
 
-		List<String> lines = Files.readAllLines(dir.resolve(SimpelModel.OUTPUT_FOLDER).resolve(SimpelModel.OUTPUT_FILE),
-				StandardCharsets.UTF_8);
+		Path outputFile;
+		try (Stream<Path> outputDirectories = Files.list(dir))
+		{
+			outputFile = outputDirectories.filter(Files::isDirectory)
+					.filter(path -> path.getFileName().toString().startsWith(SimpelModel.OUTPUT_FOLDER + "_"))
+					.map(path -> path.resolve(SimpelModel.OUTPUT_FILE))
+					.filter(Files::isRegularFile)
+					.findFirst()
+					.orElseThrow(() -> new IOException("Model results not found in timestamped output folder for " + dir));
+		}
+		List<String> lines = Files.readAllLines(outputFile, StandardCharsets.UTF_8);
 		List<String> header = Arrays.asList(lines.get(0).split("\t"));
 		Map<String, Double> sums = new LinkedHashMap<String, Double>();
 		Set<String> days = new LinkedHashSet<String>();

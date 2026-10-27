@@ -1,7 +1,7 @@
 #!/bin/sh
 # One-at-a-time sensitivity (default 0.5x and 1.5x) of the water fluxes to every parameter.
 # Usage: ./sensitivity.sh [input directory] [factor ...]   (default: example_hourly/, i.e. ET method PM)
-# Writes <input directory>/output/sensitivity_oat.csv and prints a ranking.
+# Writes <input directory>/output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv and prints a ranking.
 set -e
 cd "$(dirname "$0")"
 JAVA_BIN=${JAVA_HOME:+$JAVA_HOME/bin/}

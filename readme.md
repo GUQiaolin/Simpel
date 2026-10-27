@@ -60,7 +60,7 @@ A value outside its allowed range is clipped (for example `Land Use Fraction` at
 capacity), and the table reports the value that was actually used. A parameter whose base value is 0 cannot be
 scaled. `Start of Reduction %` is not included because `PM` does not use it.
 
-The table `output/sensitivity_oat.csv` lists, for every run, the sums over the run of:
+The table `output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv` lists, for every run, the sums over the run of:
 
 * the potential ET (`ETP_Input`, `ETP_dry`, `ETP_dry_lu`, `ETP_dry_gap`), so you can check that the demand is
   plausible

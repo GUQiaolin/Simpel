@@ -79,6 +79,12 @@ public class SimpelModel
     // Base name for the per-run results and log folder in the input directory
     public final static String OUTPUT_FOLDER = "output";
     public final static String OUTPUT_FILE = "SIMPLE_bucket_model.csv";
+	private static final DateTimeFormatter OUTPUT_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+
+	static Path outputDirectory(Path inputDirectory, LocalDateTime timestamp)
+	{
+		return inputDirectory.resolve(OUTPUT_FOLDER + "_" + timestamp.format(OUTPUT_TIMESTAMP_FORMAT));
+	}
 
 	public static void main(String[] args)
 	{
@@ -106,8 +112,7 @@ public class SimpelModel
 	public void process()
 	{
 		LocalDateTime start = LocalDateTime.now();
-		String timestamp = start.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-		Path outputDirectory = Paths.get(directory, OUTPUT_FOLDER + "_" + timestamp);
+		Path outputDirectory = outputDirectory(Paths.get(directory), start);
 		Path log = outputDirectory.resolve("SIMPEL_log.txt");
 		PrintStream console = System.out;
 		PrintStream consoleErr = System.err;
