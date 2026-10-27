@@ -11,6 +11,8 @@ package thud.simpel;
  *   latent heat       QE = (s A + rho cp VPD / ra) / (s + gamma (1 + rs / ra))
  *   surface conductance after Järvi et al. (2011), gsModel 1:
  *                     gs = G1 * (LAI/LAI_max) * g(K_down) * g(dq) * g(T_air) * g(soil moisture deficit)
+ *   bare soil in the gap of the land-use cover:
+ *                     gs_soil = soil surface conductance * (W - PWP) / (FC - PWP)
  *
  * The air temperature stands in for the surface temperature in the outgoing long-wave term.
  * Aerodynamic resistance uses a neutral log profile (no stability correction).
@@ -46,6 +48,9 @@ public class PenmanMonteithEvaporation
 	public double lowerTemperatureTL = 0.;        // degC
 	public double maxKdown = 1200.;               // W m-2
 	public double minimumConductance = 0.01;      // mm s-1, keeps rs finite at night
+
+	// Bare soil in the gap between the land-use cover (1 - Land Use Fraction)
+	public double soilSurfaceConductance = 5.;    // mm s-1, soil surface at field capacity (rs = 200 s m-1)
 
 	/** Net all-wave radiation (W m-2); the air temperature stands in for the surface temperature. */
 	public double netRadiation(double kdown, double ldown, double airTemperature)
@@ -113,6 +118,16 @@ public class PenmanMonteithEvaporation
 
 		double conductance = maxConductanceG1 * gLai * gKdown * Math.max(0., gHumidity) * gTemperature * gSoil;
 		return Math.max(conductance, minimumConductance);
+	}
+
+	/**
+	 * Surface conductance (mm s-1) of the bare soil in the gap: the soil surface conductance at field capacity,
+	 * reduced linearly with the relative available water beta = (W - PWP) / (FC - PWP).
+	 */
+	public double soilConductance(double soilWater, double fieldCapacity, double wiltingPoint)
+	{
+		double beta = Math.min(1., Math.max(0., (soilWater - wiltingPoint) / (fieldCapacity - wiltingPoint)));
+		return Math.max(soilSurfaceConductance * beta, minimumConductance);
 	}
 
 	/**

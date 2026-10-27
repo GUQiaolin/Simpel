@@ -23,7 +23,7 @@ public class InputValidationTest
 		Path example = Paths.get("example");
 
 		expectSoilError(example, "Root Depth;100", "Root Depth;0", "must be above 0 cm");
-		expectSoilError(example, "Vegetation Fraction;0.75", "Vegetation Fraction;1.5", "outside 0.0 to 1.0");
+		expectSoilError(example, "Land Use Fraction;0.75", "Land Use Fraction;1.5", "outside 0.0 to 1.0");
 		expectSoilError(example, "Permanent Wilting Point %;12", "Permanent Wilting Point %;30", "must be below");
 		expectSoilError(example, "Start of Reduction %;20", "Start of Reduction %;12", "must be above the wilting point");
 		expectSoilError(example, "Init-Value Soil %;20", "Init-Value Soil %;30", "must be at most 'Field Capacity %'");
@@ -32,6 +32,7 @@ public class InputValidationTest
 		expectSoilAppendError(example, "Root Depth;50;duplicate", "twice");
 		expectSoilAppendError(example, "Minimum LAI;1;old key", "moved to Land_Use_Parameters.txt");
 		expectSoilAppendError(example, "OHM a1;0.32;old key", "storage heat term (OHM) was removed");
+		expectSoilError(example, "Land Use Fraction;0.75", "Vegetation Fraction;0.75", "renamed to 'Land Use Fraction'");
 		expectSoilError(example, "Hemisphere;N", "Hemisphere;South", "must be N or S");
 		expectSoilError(example, "Land use;grassland", "Land use;meadow", "not in Land_Use_Parameters.txt");
 		expectTableError(example, "grassland     1.00    2.00", "grassland     2.50    2.00", "MinLAI <= MaxLAI");
@@ -57,6 +58,15 @@ public class InputValidationTest
 		replaceInFile(et0WithoutHaude.resolve("Global_Input.txt"), line -> line.trim().isEmpty() ? line : line + (line.startsWith("Date") ? "\tET0" : "\t1.0"));
 		Files.delete(et0WithoutHaude.resolve("Haude_Coefficients.txt"));
 		expectRunsIn(et0WithoutHaude, "ET0 from file without Haude_Coefficients.txt");
+
+		// PM, bare land use (MaxLAI 0): the soil now dries by evaporation from the bare-soil gap, not only by seepage
+		Path bare = copyExample(Paths.get("example_hourly"));
+		Files.write(bare.resolve("Land_Use_Parameters.txt"), ("bare_soil 0.0 0.0 3.00 0 0.00 - - - - -\n").getBytes(StandardCharsets.UTF_8),
+				java.nio.file.StandardOpenOption.APPEND);
+		replaceInFile(bare.resolve("Soil_physics.txt"), line -> line.startsWith("Land use;") ? "Land use;bare_soil;" : line);
+		expectRunsIn(bare, "PM on bare soil");
+		double bareEvaporation = columnSum(bare, "ETa");
+		if (!(bareEvaporation > 1.)) fail("PM on bare soil: expected soil evaporation from the gap, got ETa sum " + bareEvaporation);
 
 		// The run log in output/ also records an error that stops the run
 		Path broken = copyExample(example);
@@ -142,6 +152,19 @@ public class InputValidationTest
 				return;
 			}
 		}
+	}
+
+	/** Sum of one output column. */
+	static double columnSum(Path dir, String column) throws IOException
+	{
+		List<String> lines = Files.readAllLines(dir.resolve(SimpelModel.OUTPUT_FOLDER).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8);
+		int index = java.util.Arrays.asList(lines.get(0).split("\t")).indexOf(column);
+		double sum = 0.;
+		for (String line : lines.subList(1, lines.size()))
+		{
+			if (!line.trim().isEmpty()) sum += Double.parseDouble(line.split("\t")[index]);
+		}
+		return sum;
 	}
 
 	/** The (single) run log in the output folder must contain this text. */

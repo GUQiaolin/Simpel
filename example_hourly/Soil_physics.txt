@@ -3,7 +3,7 @@ Permanent Wilting Point %;12;Water Content Vol. %
 Root Depth;100;Depth of the soil water store (cm), > 0, overridden by RootDepth in Land_Use_Parameters.txt if given
 Init-Value Soil %;24;(Vol.-%)
 Land use;irrigated_grass;Row of Land_Use_Parameters.txt (LAI, degree-day, direct runoff, litter capacity) and Haude_Coefficients.txt
-Vegetation Fraction;0.75;Fraction covered by vegetation (-)
+Land Use Fraction;0.75;Share of the area covered by the land use (-); the gap (1 - fraction) is bare soil: rain falls through it directly, and with PM it evaporates through the soil surface conductance
 Layer Thickness;0.35;Layer Thickness of Water Interception for LAI 1 (mm)
 Drainage Coeff. b;3.7;Drainage Coefficient b in Interception model
 Max. Drainage Rate;2.88;Interception Max. Drainage Rate (mm/d)
@@ -16,6 +16,7 @@ Surface emissivity;0.98;(-)
 Vegetation height;0.12;(m)
 Measurement height;40;Height of wind and temperature measurement (m), AU-Preston tower
 Elevation;90;Used for air pressure only if there is no PRES column (m)
+Soil surface conductance;5;Conductance of the bare soil in the gap at field capacity (mm s-1), reduced linearly to the wilting point
 G1;16.4764;Maximum surface conductance (mm s-1), Jarvi et al. 2011
 G2;566.0923;Kdown dependence (W m-2)
 G3;0.2163;Humidity dependence slope (kg g-1)

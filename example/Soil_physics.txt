@@ -4,7 +4,7 @@ Start of Reduction %;20;Water Content Vol. %
 Root Depth;100;Depth of the soil water store (cm), > 0, overridden by RootDepth in Land_Use_Parameters.txt if given
 Init-Value Soil %;20;(Vol.-%)
 Land use;grassland;Row of Land_Use_Parameters.txt (LAI, degree-day, direct runoff, litter capacity) and Haude_Coefficients.txt
-Vegetation Fraction;0.75;Fraction covered by vegetation (-)
+Land Use Fraction;0.75;Share of the area covered by the land use (-); the gap (1 - fraction) is bare soil: rain falls through it directly, and with PM it evaporates through the soil surface conductance
 Layer Thickness;0.35;Layer Thickness of Water Interception for LAI 1 (mm)
 Drainage Coeff. b;3.7;Drainage Coefficient b in Interception model
 Max. Drainage Rate;2.88;Interception Max. Drainage Rate (mm/d)

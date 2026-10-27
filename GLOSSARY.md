@@ -66,7 +66,7 @@ for likely typos), and so do keys given twice.
 | Key | Meaning | Unit |
 |---|---|---|
 | `Land use` | Name of the row in `Land_Use_Parameters.txt` (and `Haude_Coefficients.txt`) | – |
-| `Vegetation Fraction` | Fraction of precipitation that reaches the canopy (the rest is direct throughfall) | – (0 – 1) |
+| `Land Use Fraction` | Share of the area covered by the land use (formerly `Vegetation Fraction`). The gap (1 − fraction) is bare soil: its precipitation falls through directly to litter and soil, and with `PM` it evaporates through `Soil surface conductance` | – (0 – 1) |
 | `Layer Thickness` | Interception storage per unit LAI; capacity = thickness × LAI | mm |
 | `Drainage Coeff. b` | Exponent of the canopy drainage (Rutter et al. 1971) | – |
 | `Max. Drainage Rate` | Maximum canopy drainage | mm/day |
@@ -89,6 +89,7 @@ for likely typos), and so do keys given twice.
 | `Vegetation height` | Roughness and displacement height for the aerodynamic resistance | 0.12 m |
 | `Measurement height` | Height of the wind (and temperature) measurement; must be above 0.67 × vegetation height | 2 m |
 | `Elevation` | Air pressure when there is no `PRES` column | 0 m |
+| `Soil surface conductance` | Conductance of the bare soil in the gap (1 − `Land Use Fraction`) at field capacity, reduced linearly to the minimum at the wilting point | 5 mm s⁻¹ |
 | `G1` … `G6`, `TH`, `TL`, `Kmax` | Surface conductance after Järvi et al. (2011), parameter names and values of Järvi et al. (2011): max. conductance (mm s⁻¹), K↓ shape (W m⁻²), humidity slope (kg g⁻¹) and threshold (g kg⁻¹), optimum temperature (°C), soil-moisture shape (mm⁻¹), temperature limits (°C), max. K↓ (W m⁻²) | 16.4764, 566.0923, 0.2163, 3.3649, 11.0764, 0.0176, 40, 0, 1200 |
 
 The Järvi et al. (2011) conductance parameters were fitted to urban sites (Los Angeles, Vancouver) and
@@ -161,12 +162,14 @@ conductance), not on LAI or the interception capacity.
   with the available energy taken straight from the radiation forcing (`QN`, or Q* from `KDOWN`/`LDOWN`; no
   storage heat), a neutral aerodynamic resistance and the Järvi et al. (2011) surface conductance. The
   wet-surface value (surface resistance 0) is `ETP_Input` and drives interception and litter evaporation;
-  the dry-surface value `ETP_dry` scales the demand left for the soil. The soil-moisture limitation is part
-  of the conductance (deficit = field capacity − soil water, zero conductance at the wilting point), so
-  SIMPEL's linear reduction is not applied a second time. Dew (negative QE) is not counted.
+  the dry-surface value `ETP_dry` scales the demand left for the soil. `ETP_dry` has two parts weighted by
+  `Land Use Fraction`: the land-use cover with the Järvi conductance (`ETP_dry_lu`) and the bare soil in the
+  gap with the soil conductance (`ETP_dry_gap`). The soil-moisture limitation is part of both conductances
+  (deficit = field capacity − soil water, minimum conductance at the wilting point), so SIMPEL's linear
+  reduction is not applied a second time. Dew (negative QE) is not counted.
 - **ET0 from file**: an `ET0` column replaces the demand; soil ET as with `HAUDE`.
 
-## Output columns (`SIMPLE_bucket_model.csv`)
+## Output columns (`output/SIMPLE_bucket_model.csv`)
 
 The columns (and the matching constants in `SimpelModel.java`) keep the names of the original SIMPEL
 spreadsheet columns, so results can be compared with the Excel and R versions. Fluxes are in mm per time
@@ -189,15 +192,15 @@ step, stores in mm.
 | Bilanz (`BILANZ`) | N | Litter water balance before capping ("Bilanz" = balance) | mm |
 | Content (`CONTENT`) | O | Litter storage at the end of the step | mm |
 | S-REstn (`S_RESTN`) | P | Water passing the litter layer (excess over litter capacity) | mm/step |
-| Inf-Limit (`INF_LIMIT`) | Q | Maximum infiltration this step (25 % of the soil deficit per day) | mm/step |
+| Inf-Limit (`INF_LIMIT`) | Q | Maximum infiltration this step (`Infiltration fraction`, default 25 %, of the soil deficit per day) | mm/step |
 | P-linf (`P_LINF`) | R | Water infiltrating into the soil | mm/step |
 | Rest-ETA (`REST_ETA`) | S | Evaporative demand left for the soil (after leaf and litter) | mm/step |
 | Balance_soil (`BALANCE_SOIL`) | T | Soil water after infiltration, before ET | mm |
 | ETa (`ETA`) | U | Actual evapotranspiration from the soil | mm/step |
 | ET-Balance (`ET_BALANCE`) | V | Soil water after ET, before seepage | mm |
 | Seepage (`SEEPAGE`) | W | Drainage below the root zone (Glugla) | mm/step |
-| Storage (`STORAGE`) | X | Soil water at the end of the step | mm |
-| Surface_runoff (`SURFACE_RUNOFF`) | Y | Water that neither infiltrates nor fits in the soil | mm/step |
+| Storage (`STORAGE`) | X | Soil water at the end of the step = min(ET-Balance, field capacity) − Seepage | mm |
+| Surface_runoff (`SURFACE_RUNOFF`) | Y | Water that does not infiltrate, plus soil water above field capacity | mm/step |
 | Runoff_total (`RUNOFF_TOTAL`) | Z | Surface runoff + seepage | mm/step |
 | I-Leaf (`I_LEAF`) | AA | Evaporation from leaves (= Int. ETi(leaf)) | mm/step |
 | I-Litter (`I_LITTER`) | AB | Evaporation from litter | mm/step |
@@ -206,5 +209,7 @@ step, stores in mm.
 | NetRadiation (`NET_RADIATION`) | – | Available energy Q* (`PM` only) | W m⁻² |
 | ra (`AERODYNAMIC_RESISTANCE`) | – | Aerodynamic resistance (`PM` only) | s m⁻¹ |
 | rs (`SURFACE_RESISTANCE`) | – | Surface resistance = 1000 / gs (`PM` only) | s m⁻¹ |
-| ETP_dry (`ETP_DRY`) | – | Penman–Monteith ET of the transpiring surface (`PM` only) | mm/step |
+| ETP_dry (`ETP_DRY`) | – | Penman–Monteith ET of the dry surface = f·ETP_dry_lu + (1 − f)·ETP_dry_gap, f = `Land Use Fraction` (`PM` only) | mm/step |
 | QE (`LATENT_HEAT_FLUX`) | – | ETaTotal converted to a latent heat flux (all methods) | W m⁻² |
+| ETP_dry_lu (`ETP_DRY_LU`) | – | Penman–Monteith ET of the land-use cover with the Järvi conductance (`PM` only) | mm/step |
+| ETP_dry_gap (`ETP_DRY_GAP`) | – | Penman–Monteith ET of the bare soil in the gap with the soil conductance (`PM` only) | mm/step |

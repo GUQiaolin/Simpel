@@ -41,6 +41,12 @@ public class PenmanMonteithEvaporationTest
 		// Sanity: a wet surface evaporates more than a transpiring one
 		if (!(midday.latentHeatWet > midday.latentHeatDry)) fail("wet QE should exceed dry QE");
 
+		// Bare soil in the gap: soil surface conductance (5 mm/s) times (W - PWP) / (FC - PWP)
+		check("soil conductance at field capacity", et.soilConductance(250, 250, 120), 5., 1e-12);
+		check("soil conductance above field capacity", et.soilConductance(260, 250, 120), 5., 1e-12);
+		check("soil conductance halfway", et.soilConductance(185, 250, 120), 2.5, 1e-12);
+		check("soil conductance at wilting point", et.soilConductance(120, 250, 120), et.minimumConductance, 1e-12);
+
 		if (failures > 0)
 		{
 			System.out.println("PenmanMonteithEvaporationTest FAILED: " + failures);

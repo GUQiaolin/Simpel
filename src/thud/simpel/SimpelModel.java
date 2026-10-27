@@ -54,7 +54,9 @@ public class SimpelModel
     public final static int SURFACE_RESISTANCE=33;     // s m-1
     public final static int ETP_DRY=34;                // mm/step, Penman-Monteith with surface resistance
     public final static int LATENT_HEAT_FLUX=35;       // W m-2, from ETaTotal (all methods)
-    public final static int NUMBER_OF_COLUMNS=36;
+    public final static int ETP_DRY_LU=36;             // mm/step, PM of the land-use cover (Jarvi et al. 2011 conductance)
+    public final static int ETP_DRY_GAP=37;            // mm/step, PM of the bare soil in the gap (soil surface conductance)
+    public final static int NUMBER_OF_COLUMNS=38;
     
     public final static double SECONDS_PER_DAY = 86400.;
     // Default fraction of the soil water deficit (field capacity minus storage) that can infiltrate per day;
@@ -258,7 +260,7 @@ public class SimpelModel
 		String Land_use=parameters.landUse;
 		double Minimum_LAI=landUse.minimumLai();
 		double Maximum_LAI=landUse.maximumLai();
-		double vcover=parameters.vegetationFraction;
+		double Land_use_fraction=parameters.landUseFraction;
 		double layer_thickness=parameters.layerThickness;
 		double intc_drainage_coeff_b=parameters.drainageCoefficientB;
 		double intc_drainage_max_d=parameters.maxDrainageRate;
@@ -300,7 +302,8 @@ public class SimpelModel
 		System.out.println("Land use: "+Land_use);
 		System.out.println("Minimum_LAI: "+String.format("%,.2f", Minimum_LAI)+"");
 		System.out.println("Maximum_LAI: "+String.format("%,.2f", Maximum_LAI)+"");
-		System.out.println("Vegetation cover fraction: "+String.format("%,.2f", vcover)+"");
+		System.out.println("Land use fraction: "+String.format("%,.2f", Land_use_fraction)+" (gap of bare soil: "
+				+String.format("%,.2f", 1.-Land_use_fraction)+")");
 		System.out.println("Layer Thickness: "+String.format("%,.2f", layer_thickness)+"mm");
 		System.out.println("Drainage Coeff. b: "+String.format("%,.2f", intc_drainage_coeff_b)+"");
 		System.out.println("Max. Drainage rate: "+String.format("%,.2f", intc_drainage_max_d)+"mm/d");
@@ -486,8 +489,9 @@ public class SimpelModel
 		    {
 		    	// Penman-Monteith with the available energy from the radiation forcing.
 		    	// ETP_INPUT: wet surface (rs = 0), used for interception and litter like the Haude ETP.
-		    	// ETP_DRY: transpiring surface with the Jarvi et al. (2011) surface conductance; its ratio to
-		    	// ETP_INPUT scales the demand left for the soil (see soilEvapotranspiration).
+		    	// ETP_DRY: two parts weighted by the land use fraction, the land-use cover with the Jarvi et al. (2011)
+		    	// surface conductance (ETP_DRY_LU) and the bare soil in the gap with the soil conductance (ETP_DRY_GAP).
+		    	// Its ratio to ETP_INPUT scales the demand left for the soil (see soilEvapotranspiration).
 		    	double pressure = forcing.hasPressure() ? forcing.pressure[krow]
 		    			: PenmanMonteithEvaporation.pressureFromElevation(elevation);
 		    	double windSpeed = forcing.windSpeed[krow];
@@ -500,8 +504,14 @@ public class SimpelModel
 		    	double surfaceResistance = PenmanMonteithEvaporation.surfaceResistance(conductance);
 		    	bucket_model[krow][ETP_INPUT] = PenmanMonteithEvaporation.evaporationDepth(
 		    			penmanMonteith.latentHeatFlux(availableEnergy, t14, rh14, pressure, aerodynamicResistance, 0.), t14, ts);
-		    	bucket_model[krow][ETP_DRY] = PenmanMonteithEvaporation.evaporationDepth(
+		    	bucket_model[krow][ETP_DRY_LU] = PenmanMonteithEvaporation.evaporationDepth(
 		    			penmanMonteith.latentHeatFlux(availableEnergy, t14, rh14, pressure, aerodynamicResistance, surfaceResistance), t14, ts);
+		    	double soilResistance = PenmanMonteithEvaporation.surfaceResistance(
+		    			penmanMonteith.soilConductance(soilWaterBefore, Field_Capacity, Perm_Wilting_Point));
+		    	bucket_model[krow][ETP_DRY_GAP] = PenmanMonteithEvaporation.evaporationDepth(
+		    			penmanMonteith.latentHeatFlux(availableEnergy, t14, rh14, pressure, aerodynamicResistance, soilResistance), t14, ts);
+		    	bucket_model[krow][ETP_DRY] = Land_use_fraction * bucket_model[krow][ETP_DRY_LU]
+		    			+ (1. - Land_use_fraction) * bucket_model[krow][ETP_DRY_GAP];
 		    	bucket_model[krow][NET_RADIATION] = netRadiation[krow];
 		    	bucket_model[krow][AERODYNAMIC_RESISTANCE] = aerodynamicResistance;
 		    	bucket_model[krow][SURFACE_RESISTANCE] = surfaceResistance;
@@ -543,7 +553,7 @@ public class SimpelModel
         			ci = bucket_model[krow][I_CAP];
 		        }
     		    }
-		    double direct_throughfall =  bucket_model[krow][SNOW_MELT_RAIN] *(1.-vcover);
+		    double direct_throughfall =  bucket_model[krow][SNOW_MELT_RAIN] *(1.-Land_use_fraction); // falls into the bare-soil gap
 		    double intc_in =  bucket_model[krow][SNOW_MELT_RAIN] - direct_throughfall;
 		    double intc_stor_guess = intc_in+ci; // storage depth
 
@@ -743,6 +753,7 @@ public class SimpelModel
 		pm.albedo = parameters.optional("Albedo", pm.albedo, 0., 1.);
 		pm.surfaceEmissivity = parameters.optional("Surface emissivity", pm.surfaceEmissivity, 0.5, 1.);
 		pm.vegetationHeight = parameters.optional("Vegetation height", pm.vegetationHeight, 0.001, 100.);
+		pm.soilSurfaceConductance = parameters.optional("Soil surface conductance", pm.soilSurfaceConductance, 0., 50.);
 		pm.measurementHeight = parameters.optional("Measurement height", pm.measurementHeight, 0.1, 500.);
 		if (pm.measurementHeight <= 0.67 * pm.vegetationHeight)
 		{
@@ -845,7 +856,9 @@ public class SimpelModel
 				+ "ra" + tab
 				+ "rs" + tab
 				+ "ETP_dry" + tab
-				+ "QE";
+				+ "QE" + tab
+				+ "ETP_dry_lu" + tab
+				+ "ETP_dry_gap";
 		StringBuilder sb = new StringBuilder();
 		sb.append(header + linefeed);
 		int width = bucket_model[0].length;

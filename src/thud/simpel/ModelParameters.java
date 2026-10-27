@@ -32,7 +32,7 @@ public class ModelParameters
 	public static final String ROOT_DEPTH = "Root Depth";
 	public static final String INIT_VALUE_SOIL_PERCENT = "Init-Value Soil %";
 	public static final String LAND_USE = "Land use";
-	public static final String VEGETATION_FRACTION = "Vegetation Fraction";
+	public static final String LAND_USE_FRACTION = "Land Use Fraction";
 	public static final String LAYER_THICKNESS = "Layer Thickness";
 	public static final String DRAINAGE_COEFF_B = "Drainage Coeff. b";
 	public static final String MAX_DRAINAGE_RATE = "Max. Drainage Rate";
@@ -46,14 +46,14 @@ public class ModelParameters
 
 	/** Optional keys of the PM ET method. */
 	public static final List<String> ET_KEYS = Arrays.asList("Albedo", "Surface emissivity", "Vegetation height",
-			"Measurement height", "Elevation", "G1", "G2", "G3", "G4", "G5", "G6", "TH", "TL", "Kmax");
+			"Measurement height", "Elevation", "Soil surface conductance", "G1", "G2", "G3", "G4", "G5", "G6", "TH", "TL", "Kmax");
 
 	public static final String HAUDE = "HAUDE";
 	public static final String PM = "PM";
 
 	static final Set<String> KNOWN_KEYS = new LinkedHashSet<String>(Arrays.asList(FIELD_CAPACITY_PERCENT,
 			PERMANENT_WILTING_POINT, START_OF_REDUCTION_PERCENT, ROOT_DEPTH, INIT_VALUE_SOIL_PERCENT, LAND_USE,
-			VEGETATION_FRACTION, LAYER_THICKNESS, DRAINAGE_COEFF_B, MAX_DRAINAGE_RATE,
+			LAND_USE_FRACTION, LAYER_THICKNESS, DRAINAGE_COEFF_B, MAX_DRAINAGE_RATE,
 			GLUGLA_C, INIT_VALUE_LITTER, LITTER_REDUCTION_FACTOR, TIMESTEP, ET_METHOD, HEMISPHERE, INFILTRATION_FRACTION));
 
 	/** Keys that moved to Land_Use_Parameters.txt, with their column name there. */
@@ -84,7 +84,7 @@ public class ModelParameters
 	public final double infiltrationFraction;      // share of the soil deficit (FC - storage) that may infiltrate per day
 	// vegetation and surface
 	public final String landUse;
-	public final double vegetationFraction;
+	public final double landUseFraction;           // share covered by the land use; the gap (1 - fraction) is bare soil
 	public final double layerThickness;            // mm per unit LAI
 	public final double drainageCoefficientB;
 	public final double maxDrainageRate;           // mm/day
@@ -100,6 +100,11 @@ public class ModelParameters
 		this.values = values;
 		for (String key : values.keySet())
 		{
+			if (key.equals("Vegetation Fraction"))
+			{
+				throw new IllegalArgumentException("'Vegetation Fraction' has been renamed to '" + LAND_USE_FRACTION + "' (share covered "
+						+ "by the land use; the gap is bare soil); rename the line in Soil_physics.txt");
+			}
 			if (key.startsWith("OHM a"))
 			{
 				throw new IllegalArgumentException("'" + key + "' is no longer used: the storage heat term (OHM) was removed and "
@@ -124,7 +129,7 @@ public class ModelParameters
 		gluglaCoefficient = required(GLUGLA_C, 0., 1e6);
 		infiltrationFraction = optional(INFILTRATION_FRACTION, SimpelModel.INFILTRATION_FRACTION_PER_DAY, 0., 1.);
 		landUse = requiredText(LAND_USE);
-		vegetationFraction = required(VEGETATION_FRACTION, 0., 1.);
+		landUseFraction = required(LAND_USE_FRACTION, 0., 1.);
 		layerThickness = required(LAYER_THICKNESS, 0., 10.);
 		drainageCoefficientB = required(DRAINAGE_COEFF_B, 0., 100.);
 		maxDrainageRate = required(MAX_DRAINAGE_RATE, 0., 1000.);
