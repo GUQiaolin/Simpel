@@ -606,14 +606,7 @@ public class SimpelModel
 //		      # col 23: W Seepage
 		      bucket_model[krow][SEEPAGE] = gluglaSeepage(bucket_model[krow][ET_BALANCE], Field_Capacity, Perm_Wilting_Point, Lambda, nt);		      
 //		      # col 24: X Storage Init.-Value
-		      if(bucket_model[krow][ET_BALANCE] > Field_Capacity)
-		      {
-		        bucket_model[krow][STORAGE] =  Field_Capacity;
-		      }
-		      else
-		      {
-		        bucket_model[krow][STORAGE] = bucket_model[krow][ET_BALANCE] - bucket_model[krow][SEEPAGE];
-		      }		      
+		      bucket_model[krow][STORAGE] = soilStorage(bucket_model[krow][ET_BALANCE], bucket_model[krow][SEEPAGE], Field_Capacity);		      
 		    }
 		    else
 		    {
@@ -639,14 +632,7 @@ public class SimpelModel
 		      bucket_model[krow][SEEPAGE] = gluglaSeepage(bucket_model[krow][ET_BALANCE], Field_Capacity, Perm_Wilting_Point, Lambda, nt);
 		      
 //		      # col 24: X Storage Init.-Value
-		      if(bucket_model[krow][ET_BALANCE] > Field_Capacity)
-		      {
-		        bucket_model[krow][STORAGE] =  Field_Capacity;
-		      }
-		      else
-		      {
-		        bucket_model[krow][STORAGE] = bucket_model[krow][ET_BALANCE] - bucket_model[krow][SEEPAGE];
-		      }
+		      bucket_model[krow][STORAGE] = soilStorage(bucket_model[krow][ET_BALANCE], bucket_model[krow][SEEPAGE], Field_Capacity);
 		    }
 //		    # col 25: Y surface runoff
 		    if(bucket_model[krow][ET_BALANCE] > Field_Capacity)
@@ -795,13 +781,25 @@ public class SimpelModel
 
 	/**
 	 * Seepage below the root zone after Glugla: lambda * (W - PWP)^2 per day, with W capped at field
-	 * capacity. Zero at or below the wilting point and never more than the water above it.
+	 * capacity. Zero at or below the wilting point and never more than the water between the wilting point
+	 * and min(W, FC), so the store cannot drain below the wilting point.
 	 */
 	static double gluglaSeepage(double soilWater, double fieldCapacity, double wiltingPoint, double lambda, double nt)
 	{
 		double drainableWater = Math.max(0., Math.min(soilWater, fieldCapacity) - wiltingPoint);
 		double seepage = lambda * drainableWater * drainableWater * nt;
-		return Math.min(seepage, Math.max(0., soilWater - wiltingPoint));
+		return Math.min(seepage, drainableWater);
+	}
+
+	/**
+	 * Soil storage at the end of a step. Water above field capacity runs off (see SURFACE_RUNOFF), and the
+	 * seepage always leaves the store, also when the store was above field capacity: storage = FC - seepage.
+	 * Before, the storage was reset to FC there: the seepage of that step was counted as outflow but never
+	 * taken out of the store, which created water and broke the water balance.
+	 */
+	static double soilStorage(double etBalance, double seepage, double fieldCapacity)
+	{
+		return Math.min(etBalance, fieldCapacity) - seepage;
 	}
 
 	double max(double[] items)
