@@ -31,7 +31,7 @@ Compile the source and call java on the command line with the arguments thud.sim
 java -cp bin thud.simpel.SimpelModel <input directory> [readET|dontReadET]
 ```
 
-The output `SIMPLE_bucket_model.csv` is written into the input directory.
+The results (`SIMPLE_bucket_model.csv`, overwritten on each run) and a log of the run (`SIMPEL_log_<yyyyMMdd_HHmmss>.txt`, everything printed to the console including errors) are written to the folder `output/` of the input directory.
 
 Examples:
 

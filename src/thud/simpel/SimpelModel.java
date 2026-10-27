@@ -1,12 +1,16 @@
 package thud.simpel;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class SimpelModel
 {	
@@ -68,6 +72,11 @@ public class SimpelModel
     private String[] bucket_model_dates;
     
     private Boolean readETfromFile = null; // null: decide from the ET0 column in Global_Input.txt
+    private String commandLine = "(called from Java)";
+
+    // Results and the run log are written into this folder of the input directory
+    public final static String OUTPUT_FOLDER = "output";
+    public final static String OUTPUT_FILE = "SIMPLE_bucket_model.csv";
 
 	public static void main(String[] args)
 	{
@@ -78,6 +87,7 @@ public class SimpelModel
 			System.exit(1);
 		}
 		s.setDirectory(args[0]);
+		s.commandLine = "java thud.simpel.SimpelModel " + String.join(" ", args);
 		if (args.length>1)
 		{
 			String arg1 = args[1];
@@ -86,7 +96,86 @@ public class SimpelModel
 		s.process();
 	}
 	
+	/**
+	 * Runs the model on the input directory. The results and a log of everything printed to the console
+	 * (System.out and System.err, including an error that stops the run) are written to the folder
+	 * output/ of the input directory: SIMPLE_bucket_model.csv (overwritten) and SIMPEL_log_<date>_<time>.txt.
+	 */
 	public void process()
+	{
+		Path outputDirectory = Paths.get(directory, OUTPUT_FOLDER);
+		LocalDateTime start = LocalDateTime.now();
+		Path log = outputDirectory.resolve("SIMPEL_log_" + start.format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss")) + ".txt");
+		PrintStream console = System.out;
+		PrintStream consoleErr = System.err;
+		try (OutputStream logFile = Files.newOutputStream(Files.createDirectories(outputDirectory).resolve(log.getFileName())))
+		{
+			System.setOut(new PrintStream(new TeeOutputStream(console, logFile), true, "UTF-8"));
+			System.setErr(new PrintStream(new TeeOutputStream(consoleErr, logFile), true, "UTF-8"));
+			try
+			{
+				System.out.println("SIMPEL run started " + start.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+				System.out.println("Command line: " + commandLine);
+				System.out.println("Input directory: " + Paths.get(directory).toAbsolutePath().normalize());
+				System.out.println("Output directory: " + outputDirectory.toAbsolutePath().normalize());
+				System.out.println();
+				run(outputDirectory);
+				System.out.println("\nResults written to " + outputDirectory.resolve(OUTPUT_FILE));
+			}
+			catch (RuntimeException e)
+			{
+				System.err.println("Run stopped: " + e);
+				throw e;
+			}
+			finally
+			{
+				System.out.flush();
+				System.err.flush();
+				System.setOut(console);
+				System.setErr(consoleErr);
+			}
+		}
+		catch (IOException e)
+		{
+			throw new UncheckedIOException("Cannot write the log " + log, e);
+		}
+	}
+
+	/** Copies everything written to the console into the log file as well. */
+	static class TeeOutputStream extends OutputStream
+	{
+		private final OutputStream first;
+		private final OutputStream second;
+
+		TeeOutputStream(OutputStream first, OutputStream second)
+		{
+			this.first = first;
+			this.second = second;
+		}
+
+		@Override
+		public void write(int b) throws IOException
+		{
+			first.write(b);
+			second.write(b);
+		}
+
+		@Override
+		public void write(byte[] b, int off, int len) throws IOException
+		{
+			first.write(b, off, len);
+			second.write(b, off, len);
+		}
+
+		@Override
+		public void flush() throws IOException
+		{
+			first.flush();
+			second.flush();
+		}
+	}
+
+	private void run(Path outputDirectory)
 	{
 		Forcing forcing;
 		ModelParameters parameters;
@@ -143,7 +232,7 @@ public class SimpelModel
 				System.out.println("Note: " + unused + " is no longer read (replaced by " + LandUse.FILE_NAME + ")");
 			}
 		}
-		String output = Paths.get(directory, "SIMPLE_bucket_model.csv").toString();
+		String output = outputDirectory.resolve(OUTPUT_FILE).toString();
 
 		double[][] bucket_model = SIMPLE_function(forcing, parameters, landUse, haude);
 		write_csv(bucket_model, output);

@@ -58,6 +58,13 @@ public class InputValidationTest
 		Files.delete(et0WithoutHaude.resolve("Haude_Coefficients.txt"));
 		expectRunsIn(et0WithoutHaude, "ET0 from file without Haude_Coefficients.txt");
 
+		// The run log in output/ also records an error that stops the run
+		Path broken = copyExample(example);
+		replaceInFile(broken.resolve("Soil_physics.txt"), line -> line.startsWith("Root Depth;100") ? "Root Depth;0;" : line);
+		expectError(broken, "must be above 0 cm", "log of a failed run");
+		expectLogContains(broken, "Run stopped: java.lang.IllegalArgumentException: Root depth must be above 0 cm");
+		expectLogContains(broken, "Input directory:");
+
 		if (failures > 0)
 		{
 			System.out.println("InputValidationTest FAILED: " + failures);
@@ -99,7 +106,7 @@ public class InputValidationTest
 		SimpelModel model = new SimpelModel();
 		model.setDirectory(dir.toString());
 		model.process();
-		for (String line : Files.readAllLines(dir.resolve("SIMPLE_bucket_model.csv"), StandardCharsets.UTF_8))
+		for (String line : Files.readAllLines(dir.resolve(SimpelModel.OUTPUT_FOLDER).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8))
 		{
 			if (line.contains("NaN"))
 			{
@@ -127,7 +134,7 @@ public class InputValidationTest
 		SimpelModel model = new SimpelModel();
 		model.setDirectory(dir.toString());
 		model.process();
-		for (String line : Files.readAllLines(dir.resolve("SIMPLE_bucket_model.csv"), StandardCharsets.UTF_8))
+		for (String line : Files.readAllLines(dir.resolve(SimpelModel.OUTPUT_FOLDER).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8))
 		{
 			if (line.contains("NaN"))
 			{
@@ -135,6 +142,23 @@ public class InputValidationTest
 				return;
 			}
 		}
+	}
+
+	/** The (single) run log in the output folder must contain this text. */
+	static void expectLogContains(Path dir, String expected) throws IOException
+	{
+		try (java.util.stream.Stream<Path> files = Files.list(dir.resolve(SimpelModel.OUTPUT_FOLDER)))
+		{
+			for (Path file : (Iterable<Path>) files::iterator)
+			{
+				if (file.getFileName().toString().startsWith("SIMPEL_log_")
+						&& new String(Files.readAllBytes(file), StandardCharsets.UTF_8).contains(expected))
+				{
+					return;
+				}
+			}
+		}
+		fail("no run log in " + dir + " contains '" + expected + "'");
 	}
 
 	/** The run in this directory must finish without an error. */
