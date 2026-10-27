@@ -26,6 +26,7 @@ public class InputValidationTest
 		expectSoilError(example, "Vegetation Fraction;0.75", "Vegetation Fraction;1.5", "outside 0.0 to 1.0");
 		expectSoilError(example, "Permanent Wilting Point %;12", "Permanent Wilting Point %;30", "must be below");
 		expectSoilError(example, "Start of Reduction %;20", "Start of Reduction %;12", "must be above the wilting point");
+		expectSoilError(example, "Init-Value Soil %;20", "Init-Value Soil %;30", "must be at most 'Field Capacity %'");
 		expectSoilAppendError(example, "albedo;0.2;typo of Albedo", "did you mean 'Albedo'");
 		expectSoilAppendError(example, "Root Depth;50;duplicate", "twice");
 		expectSoilAppendError(example, "Minimum LAI;1;old key", "moved to Land_Use_Parameters.txt");

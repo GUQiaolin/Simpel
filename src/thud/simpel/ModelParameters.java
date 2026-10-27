@@ -151,6 +151,12 @@ public class ModelParameters
 					+ ") must be above the wilting point (" + wiltingPointPercent + ") and at most field capacity ("
 					+ fieldCapacityPercent + ")");
 		}
+		// Above field capacity the infiltration limit (FC - storage) turns negative and soil water would leave as surface runoff
+		if (initialSoilPercent > fieldCapacityPercent)
+		{
+			throw new IllegalArgumentException("'" + INIT_VALUE_SOIL_PERCENT + "' (" + initialSoilPercent
+					+ ") must be at most '" + FIELD_CAPACITY_PERCENT + "' (" + fieldCapacityPercent + ")");
+		}
 		if (litterReductionFactor <= 0.)
 		{
 			throw new IllegalArgumentException("'" + LITTER_REDUCTION_FACTOR + "' must be above 0");

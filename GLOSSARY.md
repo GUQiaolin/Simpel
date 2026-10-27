@@ -57,7 +57,7 @@ for likely typos), and so do keys given twice.
 | `Permanent Wilting Point %` | Water content at which plants stop taking up water | vol-% | below field capacity |
 | `Start of Reduction %` | Below this water content, ET is reduced linearly to zero at the wilting point | vol-% | between wilting point and field capacity; required for `HAUDE`/ET0, ignored with `PM` |
 | `Root Depth` | Depth of the soil water store (see "Root depth" below) | cm | > 0; overridden by `RootDepth` in `Land_Use_Parameters.txt` if given there |
-| `Init-Value Soil %` | Initial water content | vol-% | 0 – 100 |
+| `Init-Value Soil %` | Initial water content | vol-% | 0 – `Field Capacity %` |
 | `Glugla coeff.` | Coefficient c of the Glugla seepage law; λ = c / (root depth in mm)² | – | ≥ 0 |
 
 **Land use and canopy.**
