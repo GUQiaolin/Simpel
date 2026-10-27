@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -67,13 +66,7 @@ public class SimpelModel
     public final String linefeed = "\n";
     private String[] bucket_model_dates;
     
-  //public int numColumnsInput = 6;  //hardcoding this for now.
     private Boolean readETfromFile = null; // null: decide from the ET0 column in Global_Input.txt
-    // private double ts = 86400.; // model time step in seconds
-    int krowEnd = 0;
-
-    //public double INTC_DRAINAGE_MAX_D = 2.88; // mm/d
-    //public double INTC_DRAINAGE_EXP_B = 3.7;  // mm^(-1)
 
 	public static void main(String[] args)
 	{
@@ -203,7 +196,7 @@ public class SimpelModel
 
 
 
-		// Check parameters (just to show what is mandatory and what is derived, can be deleted)
+		// Echo the parameters (given and derived) to the console and log
 		System.out.println("SIMPEL");
 		System.out.println("======");
 		System.out.println("\nParameters:");
@@ -368,50 +361,20 @@ public class SimpelModel
 			  double rh14 = forcing.relativeHumidity[krow]; // $kf: added for internal ETP calculation
 			  double doy = dates[krow].getDayOfYear();
 			  double p = forcing.precipitation[krow];
-//		    # col 3+4:  
-//		    # first row
-		    if(krow==0)
-		    {    	
-//		      # col 3: C snow water equi
-		    	bucket_model[krow][SNOW_WATER_EQUI] = init_swe; //# col 3 // $kf set to init_swe for consistency with water balance
-		      
-//		      # col 4: D Snow melt + rain
-		      double[] temp = new double[]{0, landuse_DayDegree*t14 * nt};
-		      if(t14 >= 0)
-		      {
-		        bucket_model[krow][SNOW_MELT_RAIN] = Math.min(0,(max(temp))) + bucket_model[krow][PRECIPITATION];
-		      }
-		      else
-		      {
-		        bucket_model[krow][SNOW_MELT_RAIN] = Math.min(0,(max(temp))) + 0;
-		      }
-		      
-//		      # col 3 (dependent on col 4)
-		      bucket_model[krow][SNOW_WATER_EQUI] = bucket_model[krow][SNOW_WATER_EQUI] + bucket_model[krow][PRECIPITATION] 
-		    		  - bucket_model[krow][SNOW_MELT_RAIN];
-		    }
-		    
-//		    # rest of the rows
-		    if(krow > 0) // $kf: applies to all rows greater than zero
+//		    # col 3+4: snow (degree-day melt above 0 degC; below 0 degC all precipitation is snow)
+		    double prevSwe = krow==0 ? init_swe : bucket_model[krow-1][SNOW_WATER_EQUI];
+		    double potentialMelt = Math.max(0, landuse_DayDegree*t14*nt);
+		    if(t14 < 0)
 		    {
-		      double[] temp = new double[]{0, landuse_DayDegree*t14 * nt};
-		      if(t14 < 0)
-		      {
-//		        # col 4: Snow melt + rain 
-		        bucket_model[krow][SNOW_MELT_RAIN] = 
-		        		Math.min(max(temp), bucket_model[krow-1][SNOW_WATER_EQUI]+bucket_model[krow][PRECIPITATION]);
-		        
-//		        # col 3 (dependent on col 4)
-		        bucket_model[krow][SNOW_WATER_EQUI] = bucket_model[krow-1][SNOW_WATER_EQUI] + bucket_model[krow][PRECIPITATION] 
-		        		- bucket_model[krow][SNOW_MELT_RAIN]+0;
-		      }
-		      else
-		      {
-		        bucket_model[krow][SNOW_MELT_RAIN] = Math.min(max(temp),(bucket_model[krow-1][SNOW_WATER_EQUI])+0) 
-		        		+ bucket_model[krow][PRECIPITATION];
-		        bucket_model[krow][SNOW_WATER_EQUI] = bucket_model[krow-1][SNOW_WATER_EQUI] + 0 
-		        		- bucket_model[krow][SNOW_MELT_RAIN] +  bucket_model[krow][PRECIPITATION];
-		      }
+//		      # col 4: D Snow melt + rain
+		      bucket_model[krow][SNOW_MELT_RAIN] = Math.min(potentialMelt, prevSwe+bucket_model[krow][PRECIPITATION]);
+//		      # col 3: C Snow water equivalent (dependent on col 4)
+		      bucket_model[krow][SNOW_WATER_EQUI] = prevSwe + bucket_model[krow][PRECIPITATION] - bucket_model[krow][SNOW_MELT_RAIN];
+		    }
+		    else
+		    {
+		      bucket_model[krow][SNOW_MELT_RAIN] = Math.min(potentialMelt, prevSwe) + bucket_model[krow][PRECIPITATION];
+		      bucket_model[krow][SNOW_WATER_EQUI] = prevSwe - bucket_model[krow][SNOW_MELT_RAIN] + bucket_model[krow][PRECIPITATION];
 		    }
 //		    # col 7: G LAI
 		    bucket_model[krow][LAI] = phenology.lai(Phenology.seasonalDay(doy, southernHemisphere));
@@ -421,7 +384,7 @@ public class SimpelModel
 		    bucket_model[krow][ETP_COEFF] = haude == null ? 0. : haude.forMonth(month, southernHemisphere);
 		    
 //		    # col 6: F ETP Input
-		    if(readETfromFile) // if(numColumnsInput >= 6) // $kf
+		    if(readETfromFile)
 		    {   
 		    	  //# check if input variable is given
 //		          # if yes, use given ETP0
@@ -488,13 +451,11 @@ public class SimpelModel
         			ci = bucket_model[krow][I_CAP];
 		        }
     		    }
-		    //double ntf = 0.25; // fraction of precipitation that always becomes throughfall, todo: make parameter adjustable
 		    double direct_throughfall =  bucket_model[krow][SNOW_MELT_RAIN] *(1.-vcover);
 		    double intc_in =  bucket_model[krow][SNOW_MELT_RAIN] - direct_throughfall;
 		    double intc_stor_guess = intc_in+ci; // storage depth
 
 //		    # col 9: I ETi: Evaporation from wetted leaf 
-		    // bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][I_CAP], bucket_model[krow][ETP_INPUT]);
 		    double intc_drainage;
 		    if(bucket_model[krow][I_CAP] <= 0.)
 		    {
@@ -514,7 +475,6 @@ public class SimpelModel
     		    else
 			    bucket_model[krow][INT_ETI_LEAF] = Math.min(bucket_model[krow][ETP_INPUT]*intc_stor_guess/ bucket_model[krow][I_CAP], intc_stor_guess);
 //		    # col 10: J I-Bal.: Temp calcalation
-		    //bucket_model[krow][I_BAL] = bucket_model[krow][SNOW_MELT_RAIN] - bucket_model[krow][INT_ETI_LEAF];
 		    if(bucket_model[krow][I_CAP] < intc_stor_guess-bucket_model[krow][INT_ETI_LEAF]) 
 			intc_drainage = Math.max(intc_stor_guess-bucket_model[krow][INT_ETI_LEAF]-bucket_model[krow][I_CAP],intc_drainage_max);
     		    else
@@ -532,108 +492,39 @@ public class SimpelModel
 		    bucket_model[krow][I_PREC] = direct_throughfall + intc_drainage + t_surplus;
 		    
 //		    # col 12: L I-Rem.: Remaining ETa passed to subsequent model
-		    // bucket_model[krow][I_REM] = -1*Math.min(bucket_model[krow][I_BAL],0)
-		    // 		-bucket_model[krow][INT_ETI_LEAF]+bucket_model[krow][ETP_INPUT];
 		    bucket_model[krow][I_REM] = bucket_model[krow][ETP_INPUT] - bucket_model[krow][INT_ETI_LEAF];	
 
-//		    # col 13+14+15
-//		    # first row
-//		    # litter reduction is now adjusted to time step of input series
-		    if(krow==0)
-		    {
-//		      # col 13: M ETi Litter
-		      bucket_model[krow][I_ETI_LITTER] = litterEvaporation(bucket_model[krow][I_REM], Cap_Litter,
-		    		  Init_Value_Litter + bucket_model[krow][I_PREC], Litter_Reduction_factor_dt);
-		      
-//		      # col 14: N Bilanz (needed for col 13 & 15)
-		      bucket_model[krow][BILANZ] = Init_Value_Litter + bucket_model[krow][I_PREC] - bucket_model[krow][I_ETI_LITTER];
-		      
-//		      # col 15: O Content (needed for col 13 & 14)
-		      if(bucket_model[krow][BILANZ] > Cap_Litter)
-		      {
-		        bucket_model[krow][CONTENT] = Cap_Litter;
-		      }
-		      else 
-		      {
-		    	  bucket_model[krow][CONTENT] = Math.max(0,bucket_model[krow][BILANZ]);
-		      }		      
-		    }
-		    else
-		    {//# rest of the rows
-//		      # col 13: M ETi Litter
-		      bucket_model[krow][I_ETI_LITTER] = litterEvaporation(bucket_model[krow][I_REM], Cap_Litter,
-		    		  bucket_model[krow-1][CONTENT] + bucket_model[krow][I_PREC], Litter_Reduction_factor_dt);
-		      
-//		      # col 14: N Bilanz (needed for col 13 & 15)
-		      bucket_model[krow][BILANZ] = bucket_model[krow-1][CONTENT]  + bucket_model[krow][I_PREC] - bucket_model[krow][I_ETI_LITTER];
-		      
-//		      # col 15: O Content (needed for col 13 & 14)
-		      if(bucket_model[krow][BILANZ] > Cap_Litter)
-		      {
-		        bucket_model[krow][CONTENT] = Cap_Litter;
-		      }
-		      else
-		      {
-		    	  bucket_model[krow][CONTENT] = Math.max(0,bucket_model[krow][BILANZ]);
-		      }
-		    }		    
+//		    # col 13+14+15: litter layer, litter reduction adjusted to the time step of the input series
+		    double prevContent = krow==0 ? Init_Value_Litter : bucket_model[krow-1][CONTENT];
+//		    # col 13: M ETi Litter
+		    bucket_model[krow][I_ETI_LITTER] = litterEvaporation(bucket_model[krow][I_REM], Cap_Litter,
+		    		prevContent + bucket_model[krow][I_PREC], Litter_Reduction_factor_dt);
+//		    # col 14: N Bilanz (needed for col 13 & 15)
+		    bucket_model[krow][BILANZ] = prevContent + bucket_model[krow][I_PREC] - bucket_model[krow][I_ETI_LITTER];
+//		    # col 15: O Content (needed for col 13 & 14)
+		    bucket_model[krow][CONTENT] = Math.min(Cap_Litter, Math.max(0, bucket_model[krow][BILANZ]));
 //		    # col 16: P S-REstn
 		    bucket_model[krow][S_RESTN] = Math.max(0, (bucket_model[krow][BILANZ]-bucket_model[krow][CONTENT]));
 		    
-//		    # col 17-24:
-//		    # first row
-//		    # Groundwater recharge computation with Glugla approach now adjusted to time step length
-		    if(krow==0)
-		    {
-//		      # col 17: Q Inf-Limit
-		      // infiltration limit per time step: a fixed fraction of the soil deficit per day, scaled to the step length
-		      bucket_model[krow][INF_LIMIT] = (Field_Capacity-Init_Value_Soil)*INFILTRATION_FRACTION_PER_DAY*nt;
-		      
-//		      # col 18: R P-Inf
-		      bucket_model[krow][P_LINF] = Math.min(bucket_model[krow][S_RESTN],bucket_model[krow][INF_LIMIT])*(1.-Direct_runoff_factor/100.);
-		      
-//		      # col 19: S S-Rest
-		      bucket_model[krow][REST_ETA] = -1*Math.min(0,bucket_model[krow][BILANZ])+bucket_model[krow][I_REM]-bucket_model[krow][I_ETI_LITTER];
-		      
-//		      # col 20: T Balance soil
-		      bucket_model[krow][BALANCE_SOIL] = Init_Value_Soil + bucket_model[krow][P_LINF];
-		      
-//		      # col 21: U ETa
-		      bucket_model[krow][ETA] = soilEvapotranspiration(usePenmanMonteith, bucket_model[krow], Start_of_Reduction, Perm_Wilting_Point);		      
-//		      # col 22: V ET-Balance
-		      bucket_model[krow][ET_BALANCE] = bucket_model[krow][BALANCE_SOIL] - bucket_model[krow][ETA];
-		      
-//		      # col 23: W Seepage
-		      bucket_model[krow][SEEPAGE] = gluglaSeepage(bucket_model[krow][ET_BALANCE], Field_Capacity, Perm_Wilting_Point, Lambda, nt);		      
-//		      # col 24: X Storage Init.-Value
-		      bucket_model[krow][STORAGE] = soilStorage(bucket_model[krow][ET_BALANCE], bucket_model[krow][SEEPAGE], Field_Capacity);		      
-		    }
-		    else
-		    {
-//		      # col 17: Q Inf-Limit
-		      bucket_model[krow][INF_LIMIT] = (Field_Capacity-bucket_model[krow-1][STORAGE])*INFILTRATION_FRACTION_PER_DAY*nt;
-		      
-//		      # col 18: R P-Inf
-		      bucket_model[krow][P_LINF] = Math.min(bucket_model[krow][S_RESTN],bucket_model[krow][INF_LIMIT])*(1.-Direct_runoff_factor/100.);
-		      
-//		      # col 19: S S-Rest
-		      bucket_model[krow][REST_ETA] = -1*Math.min(0,bucket_model[krow][BILANZ])+bucket_model[krow][I_REM]-bucket_model[krow][I_ETI_LITTER];
-		      
-//		      # col 20: T Balance soil
-		      bucket_model[krow][BALANCE_SOIL] = bucket_model[krow-1][STORAGE] + bucket_model[krow][P_LINF];
-		      
-//		      # col 21: U ETa
-		      bucket_model[krow][ETA] = soilEvapotranspiration(usePenmanMonteith, bucket_model[krow], Start_of_Reduction, Perm_Wilting_Point);
-		      
-//		      # col 22: V ET-Balance
-		      bucket_model[krow][ET_BALANCE] = bucket_model[krow][BALANCE_SOIL] - bucket_model[krow][ETA];
-		      
-//		      # col 23: W Seepage
-		      bucket_model[krow][SEEPAGE] = gluglaSeepage(bucket_model[krow][ET_BALANCE], Field_Capacity, Perm_Wilting_Point, Lambda, nt);
-		      
-//		      # col 24: X Storage Init.-Value
-		      bucket_model[krow][STORAGE] = soilStorage(bucket_model[krow][ET_BALANCE], bucket_model[krow][SEEPAGE], Field_Capacity);
-		    }
+//		    # col 17-24: soil store, groundwater recharge with the Glugla approach adjusted to the time step length
+		    double prevStorage = krow==0 ? Init_Value_Soil : bucket_model[krow-1][STORAGE];
+//		    # col 17: Q Inf-Limit
+		    // infiltration limit per time step: a fixed fraction of the soil deficit per day, scaled to the step length
+		    bucket_model[krow][INF_LIMIT] = (Field_Capacity-prevStorage)*INFILTRATION_FRACTION_PER_DAY*nt;
+//		    # col 18: R P-Inf
+		    bucket_model[krow][P_LINF] = Math.min(bucket_model[krow][S_RESTN],bucket_model[krow][INF_LIMIT])*(1.-Direct_runoff_factor/100.);
+//		    # col 19: S S-Rest
+		    bucket_model[krow][REST_ETA] = -1*Math.min(0,bucket_model[krow][BILANZ])+bucket_model[krow][I_REM]-bucket_model[krow][I_ETI_LITTER];
+//		    # col 20: T Balance soil
+		    bucket_model[krow][BALANCE_SOIL] = prevStorage + bucket_model[krow][P_LINF];
+//		    # col 21: U ETa
+		    bucket_model[krow][ETA] = soilEvapotranspiration(usePenmanMonteith, bucket_model[krow], Start_of_Reduction, Perm_Wilting_Point);
+//		    # col 22: V ET-Balance
+		    bucket_model[krow][ET_BALANCE] = bucket_model[krow][BALANCE_SOIL] - bucket_model[krow][ETA];
+//		    # col 23: W Seepage
+		    bucket_model[krow][SEEPAGE] = gluglaSeepage(bucket_model[krow][ET_BALANCE], Field_Capacity, Perm_Wilting_Point, Lambda, nt);
+//		    # col 24: X Storage
+		    bucket_model[krow][STORAGE] = soilStorage(bucket_model[krow][ET_BALANCE], bucket_model[krow][SEEPAGE], Field_Capacity);
 //		    # col 25: Y surface runoff
 		    if(bucket_model[krow][ET_BALANCE] > Field_Capacity)
 		    {
@@ -661,10 +552,9 @@ public class SimpelModel
 		    sum_prec = sum_prec + p;
 		    sum_etr  = sum_etr  + bucket_model[krow][ETA_TOTAL];
 		    sum_runoff = sum_runoff + bucket_model[krow][RUNOFF_TOTAL];
-		    krowEnd = krow;
 		  }
 //		  # water balance check
-		  double water_balance = sum_prec - sum_etr - sum_runoff + init_swe + init_stor + Init_Value_Litter - bucket_model[krowEnd][STORAGE] - bucket_model[krowEnd][SNOW_WATER_EQUI] - bucket_model[krowEnd][I_BAL] - bucket_model[krowEnd][CONTENT];
+		  double water_balance = sum_prec - sum_etr - sum_runoff + init_swe + init_stor + Init_Value_Litter - bucket_model[rows-1][STORAGE] - bucket_model[rows-1][SNOW_WATER_EQUI] - bucket_model[rows-1][I_BAL] - bucket_model[rows-1][CONTENT];
 		  System.out.println("water balance check");
 		  System.out.println(water_balance);
 		  
@@ -813,15 +703,6 @@ public class SimpelModel
 		return Math.min(etBalance, fieldCapacity) - seepage;
 	}
 
-	double max(double[] items)
-	{
-		return Math.max(items[0], items[1]);
-	}
-	double min(double[] items)
-	{
-		return Math.min(items[0], items[1]);
-	}
-	
 	public void writeFile(String text, String filename)
 	{
 		try
@@ -889,10 +770,6 @@ public class SimpelModel
 		writeFile(sb.toString(), output);
 	}
 
-	public String getDirectory()
-	{
-		return directory;
-	}
 	public void setDirectory(String directory)
 	{
 		this.directory = directory;

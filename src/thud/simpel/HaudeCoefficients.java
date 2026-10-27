@@ -35,7 +35,7 @@ public class HaudeCoefficients
 	}
 
 	/** Coefficient for a month (1 = January). */
-	public double forMonth(int month)
+	private double forMonth(int month)
 	{
 		return coefficients[month - 1];
 	}

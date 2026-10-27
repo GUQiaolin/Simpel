@@ -85,11 +85,6 @@ public class LookupTable
 		return table;
 	}
 
-	public boolean hasRow(String landUse)
-	{
-		return rows.containsKey(landUse);
-	}
-
 	/** Raw text of a cell; checks that the land use exists. */
 	String text(String landUse, String column)
 	{

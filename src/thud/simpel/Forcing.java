@@ -17,6 +17,8 @@ import java.util.Map;
  * Meteorological forcing from Global_Input.txt, read and checked once.
  *
  * Columns are matched by their header name (see COLUMNS for names, aliases, units and allowed ranges).
+ * The day of year and the month always come from the Date column (there is no DOY column; an old DOY
+ * column is ignored with a warning, like any unknown column).
  * Every value is parsed once into a named array; a missing value marker (empty, NA, NaN, -999), a value
  * that is not a number or a value outside the plausible range stops the run with the row and column named.
  * Optional columns that are absent are null.
@@ -62,9 +64,8 @@ public class Forcing
 	static final Column PRESSURE = new Column("PRES", "hPa", 500., 1100.);
 	static final Column NET_RADIATION = new Column("QN", "W m-2", -300., 1100.);
 	static final Column ET0 = new Column("ET0", "mm/step", 0., 50.);
-	static final Column DAY_OF_YEAR = new Column("DOY", "-", 1., 366.);
 	static final Column[] COLUMNS = { PRECIPITATION, AIR_TEMPERATURE, RELATIVE_HUMIDITY, KDOWN, LDOWN,
-			WIND_SPEED, PRESSURE, NET_RADIATION, ET0, DAY_OF_YEAR };
+			WIND_SPEED, PRESSURE, NET_RADIATION, ET0 };
 
 	static final String[] MISSING_VALUE_MARKERS = { "", "NA", "NaN", "nan", "-999", "-999.0", "-9999" };
 
