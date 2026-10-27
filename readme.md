@@ -42,6 +42,39 @@ Examples:
 
 `./test.sh` compiles everything, runs the unit tests (Penman–Monteith against an independent Python implementation, phenology, single bucket steps, input checks) and checks the three examples against `test/reference/`, including the water balance at every step.
 
+## Sensitivity of the water fluxes
+
+```
+./sensitivity.sh [input directory] [factor ...]     # default: example_hourly/ (PM), factors 0.5 1.5
+```
+
+This runs a one-at-a-time sensitivity analysis. Every parameter is set to 0.5× and 1.5× of its value, while all
+others stay at their base value:
+
+* soil keys
+* canopy and litter keys
+* the land-use columns (MinLAI and MaxLAI scaled together, DirectRunoff, LitterCap, DegreeDay, RootDepth)
+* all `PM` keys
+
+A value outside its allowed range is clipped (for example `Land Use Fraction` at 1, or `Init-Value Soil %` at field
+capacity), and the table reports the value that was actually used. A parameter whose base value is 0 cannot be
+scaled. `Start of Reduction %` is not included because `PM` does not use it.
+
+The table `output/sensitivity_oat.csv` lists, for every run, the sums over the run of:
+
+* the potential ET (`ETP_Input`, `ETP_dry`, `ETP_dry_lu`, `ETP_dry_gap`), so you can check that the demand is
+  plausible
+* ETaTotal, I-Leaf, I-Litter, ETa, Seepage, Surface_runoff and Runoff_total
+* the final soil storage
+
+It also gives each value's change against the base run in %. The script prints a ranking by the largest change of
+ETaTotal, Seepage or Runoff_total, and flags a mean ETP outside 0–10 mm/day.
+
+The `example_hourly/` forcing has no precipitation, so interception, litter, infiltration and runoff parameters
+show no effect there. Run the script on a forcing with rain to test them. Also note that, with `PM`, LAI acts on
+transpiration only through LAI/MaxLAI. Scaling MinLAI and MaxLAI together therefore changes only the
+interception, not the transpiration.
+
 ## Land Use Fraction: land use and bare-soil gap
 
 Each run models one land use (the `Land use` row of `Land_Use_Parameters.txt`). `Land Use Fraction` (f,
@@ -113,6 +146,8 @@ New features:
   parameter that can be tested for sensitivity.
 * **`output/` folder and run log.** Results and `SIMPEL_log_<date>_<time>.txt` (the console output of the
   run, including errors) are written to `<input dir>/output/`.
+
+* **Sensitivity tool** (`sensitivity.sh`): see "Sensitivity of the water fluxes".
 
 Clean-up, with unchanged results:
 
