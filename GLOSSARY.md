@@ -38,11 +38,12 @@ are comments.
 | `LDOWN` | Incoming long-wave radiation | W m⁻² | 50 – 700 | `PM` without `QN`, optional: if missing, a clear-sky estimate is used (too low under cloud) |
 | `PRES` | Air pressure | hPa | 500 – 1100 | `PM`, optional: if missing, from `Elevation` |
 | `ET0` | External potential ET | mm/step | 0 – 50 | optional: read with the `readET` argument, or automatically if present |
-| `DOY` | Ignored; the day of year comes from `Date` | – | – | optional |
 
 - **Time step:** the spacing of the dates. It must be constant and divide a day evenly (1, 2, 3, 4, 6, 8,
   12 or 24 h); daily dates must be consecutive days.
 - **Missing values:** empty fields, `NA`, `NaN` and `-999` are not accepted; fill gaps before running.
+- **No `DOY` column:** the day of year and the month come from `Date` for every method (also daily `HAUDE`).
+  An old `DOY` column is ignored with a warning, like any unknown column.
 
 ### `Soil_physics.txt`: soil, site and method
 
@@ -71,7 +72,7 @@ for likely typos), and so do keys given twice.
 | `Drainage Coeff. b` | Exponent of the canopy drainage (Rutter et al. 1971) | – |
 | `Max. Drainage Rate` | Maximum canopy drainage | mm/day |
 | `Init-Value Litter` | Initial water in the litter layer | mm |
-| `Litter Reduction factor` | At most 1/factor of the litter water can evaporate per day | – (> 0) |
+| `Litter Reduction factor` | Litter evaporation per day is at most min(litter capacity, litter water) / factor (as in the SIMPEL spreadsheet) | – (> 0) |
 
 **Site and method.**
 
