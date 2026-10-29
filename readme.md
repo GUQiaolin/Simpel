@@ -38,6 +38,7 @@ Examples:
 
 * `example/` – daily run with the Haude method (original example, 1995, Central Europe).
 * `example_hourly/` – hourly run with `ET method;PM`, forced with January 2004 of the AU-Preston (Melbourne) tower data from the TARGET repository, averaged to hourly (`Hemisphere;S`). That data set has no precipitation, so P is 0 and the run shows a dry-down; the measurement height is the 40 m tower. It uses an added land use `irrigated_grass`.
+* `example_hourly_winter/` and `example_hourly_winter_rain/` – paired, synthetic Germany-like January scenarios for sensitivity comparisons, with no rain and three rain events respectively.
 * `example_daily_pm/` – the same month aggregated to daily means (for comparison only, see "Penman–Monteith on a daily time step" below).
 
 `./test.sh` compiles everything, runs the unit tests (Penman–Monteith against an independent Python implementation, phenology, single bucket steps, input checks) and checks the three examples against `test/reference/`, including the water balance at every step.
@@ -45,20 +46,22 @@ Examples:
 ## Sensitivity of the water fluxes
 
 ```
-./sensitivity.sh [input directory] [factor ...]     # default: example_hourly/ (PM), factors 0.5 1.5
+./sensitivity.sh [input directory]     # default: example_hourly_winter/ (PM)
 ```
 
-This runs a one-at-a-time sensitivity analysis. Every parameter is set to 0.5× and 1.5× of its value, while all
-others stay at their base value:
+This runs a one-at-a-time sensitivity analysis. Each parameter is tested at five levels: its valid lower limit,
+the midpoint from the lower limit to its configured value, its configured value, the midpoint from its configured
+value to the valid upper limit, and the valid upper limit. Other parameters stay at their configured values.
+Cross-parameter constraints (such as `MinLAI <= MaxLAI` and `Permanent Wilting Point % < Field Capacity %`)
+are respected. `MinLAI` and `MaxLAI` are varied together, with both set to the tested `MaxLAI` value.
 
 * soil keys
 * canopy and litter keys
-* the land-use columns (MinLAI and MaxLAI scaled together, DirectRunoff, LitterCap, DegreeDay, RootDepth)
+* the land-use columns (shared `MinLAI`/`MaxLAI`, `DirectRunoff`, `LitterCap`, `DegreeDay`, `RootDepth`)
 * all `PM` keys
 
-A value outside its allowed range is clipped (for example `Land Use Fraction` at 1, or `Init-Value Soil %` at field
-capacity), and the table reports the value that was actually used. A parameter whose base value is 0 cannot be
-scaled. `Start of Reduction %` is not included because `PM` does not use it.
+The valid limits follow each parameter's allowed range and are tightened where needed to keep combinations valid.
+For example, `MinLAI` cannot exceed `MaxLAI`, and initial soil water cannot exceed field capacity.
 
 The table `output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv` lists, for every run, the sums over the run of:
 
@@ -70,10 +73,21 @@ The table `output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv` lists, for every run, t
 It also gives each value's change against the base run in %. The script prints a ranking by the largest change of
 ETaTotal, Seepage or Runoff_total, and flags a mean ETP outside 0–10 mm/day.
 
-The `example_hourly/` forcing has no precipitation, so interception, litter, infiltration and runoff parameters
-show no effect there. Run the script on a forcing with rain to test them. Also note that, with `PM`, LAI acts on
-transpiration only through LAI/MaxLAI. Scaling MinLAI and MaxLAI together therefore changes only the
-interception, not the transpiration.
+The `example_hourly_winter/` forcing has no precipitation. A matching rain scenario is provided in
+`example_hourly_winter_rain/`, with 10, 20, and 40 mm hourly events on 15, 16, and 17 January 2004 at 12:00. Both
+use a synthetic, Germany-like January meteorological series based on the stated climate targets (2 °C mean air
+temperature, about 140 W/m² mean daily KDOWN peak, 290–295 W/m² LDOWN, and 4.5 m/s wind at 10 m). These are
+illustrative forcing values, not observed measurements. Run both:
+
+```
+./sensitivity.sh example_hourly_winter/
+./sensitivity.sh example_hourly_winter_rain/
+```
+
+Each run writes `sensitivity_oat.csv` under a timestamped output folder in that input directory. With `PM`, LAI
+affects transpiration through LAI/MaxLAI; the sensitivity analysis changes both LAI limits together.
+Open `plot_sensitivity_oat.ipynb` to compare the forcing precipitation, monthly water-balance summaries, and
+parameter sensitivities side by side for the dry and rainfall scenarios.
 
 ## Land Use Fraction: land use and bare-soil gap
 

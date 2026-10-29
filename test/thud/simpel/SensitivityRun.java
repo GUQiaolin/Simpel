@@ -10,6 +10,7 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -19,11 +20,10 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 /**
- * One-at-a-time sensitivity of the water fluxes: every parameter is run at 0.5x and 1.5x of its value in the
- * input directory (all other parameters at their base value). A value outside its allowed range is clipped
- * and the value used is reported. Parameters whose base value is 0 cannot be scaled and are listed as such.
+ * One-at-a-time sensitivity of the water fluxes: each parameter is tested at its lower limit, midpoint to its
+ * default, default, midpoint to its upper limit, and upper limit (all other parameters at their base value).
  *
- * Usage: java thud.simpel.SensitivityRun <input directory> [factor ...]   (default factors 0.5 1.5)
+ * Usage: java thud.simpel.SensitivityRun <input directory>
  *
  * Writes <input directory>/output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv: for each run the sums over the run of
  * the potential ET (ETP_Input, ETP_dry and its parts), the actual ET terms, seepage and runoff, the final soil
@@ -32,6 +32,7 @@ import java.util.stream.Stream;
  */
 public class SensitivityRun
 {
+	static final String[] LEVELS = { "minimum", "midpoint_low", "default", "midpoint_high", "maximum" };
 	static final String[] OUTPUTS = { "ETP_Input", "ETP_dry", "ETP_dry_lu", "ETP_dry_gap", "ETaTotal", "I-Leaf", "I-Litter",
 			"ETa", "Seepage", "Surface_runoff", "Runoff_total" };
 	static final String FINAL_STORAGE = "Storage";
@@ -98,20 +99,18 @@ public class SensitivityRun
 
 	public static void main(String[] args) throws IOException
 	{
-		if (args.length < 1)
+		if (args.length != 1)
 		{
-			System.err.println("Usage: java thud.simpel.SensitivityRun <input directory> [factor ...]");
+			System.err.println("Usage: java thud.simpel.SensitivityRun <input directory>");
 			System.exit(1);
 		}
 		Path input = Paths.get(args[0]);
-		double[] factors = args.length > 1 ? Arrays.stream(args, 1, args.length).mapToDouble(Double::parseDouble).toArray()
-				: new double[] { 0.5, 1.5 };
 		LocalDateTime start = LocalDateTime.now();
 
 		Map<String, String> soil = readSoil(input);
 		String landUse = soil.get("Land use");
 		System.out.println("One-at-a-time sensitivity of " + input + " (land use " + landUse + ", ET method "
-				+ soil.getOrDefault("ET method", "HAUDE") + "), factors " + Arrays.toString(factors));
+				+ soil.getOrDefault("ET method", "HAUDE") + "), five levels per parameter");
 
 		Map<String, Double> base = run(input, null, Double.NaN, landUse);
 		double days = base.get("days");
@@ -125,49 +124,32 @@ public class SensitivityRun
 					+ "parameters cannot show an effect.");
 		}
 
-		StringBuilder csv = new StringBuilder("parameter\tfactor\tvalue\tnote");
+		StringBuilder csv = new StringBuilder("parameter\tlevel\tvalue\tnote");
 		for (String output : OUTPUTS) csv.append('\t').append(output);
 		csv.append("\tStorage_end");
 		for (String output : OUTPUTS) csv.append('\t').append(output).append("_change_%");
 		csv.append("\tStorage_end_change_%\n");
-		appendRow(csv, "base", 1., Double.NaN, "", base, base);
+		appendRow(csv, "base", "reference", Double.NaN, "", base, base);
 
 		Map<String, Double> largestChange = new LinkedHashMap<String, Double>();
 		for (Parameter parameter : parameters())
 		{
-			double baseValue = baseValue(parameter, soil, input, landUse);
-			if (Double.isNaN(baseValue))
+			double defaultValue = baseValue(parameter, soil, input, landUse);
+			double[] bounds = parameterBounds(parameter, soil, input, landUse);
+			if (defaultValue < bounds[0] || defaultValue > bounds[1])
 			{
-				continue;
+				throw new IllegalArgumentException(parameter.name + " default value " + defaultValue
+						+ " is outside its valid sensitivity range [" + bounds[0] + ", " + bounds[1] + "]");
 			}
-			for (double factor : factors)
+			double[] values = sensitivityValues(bounds[0], defaultValue, bounds[1]);
+			for (int i = 0; i < values.length; i++)
 			{
-				String note = "";
-				double value = baseValue * factor;
-				// the initial soil water may not exceed field capacity
-				double max = parameter.name.equals("Init-Value Soil %") ? Double.parseDouble(soil.get("Field Capacity %")) : parameter.max;
-				if (baseValue == 0.)
-				{
-					note = "base value 0, not scaled";
-				}
-				else if (value < parameter.min || value > max)
-				{
-					value = Math.max(parameter.min, Math.min(max, value));
-					note = "clipped to the allowed range";
-				}
-				Map<String, Double> result;
-				try
-				{
-					result = run(input, parameter, value, landUse);
-				}
-				catch (IllegalArgumentException e)
-				{
-					System.out.println("  " + parameter.name + " x" + factor + ": not run, " + e.getMessage());
-					continue;
-				}
-				if (result.containsKey("note")) note = (note.isEmpty() ? "" : note + "; ") + "Init-Value Soil % lowered to the new field capacity";
-				appendRow(csv, parameter.name, factor, value, note, result, base);
-				checkEtp(parameter.name + " x" + factor, result.get("ETP_Input") / days);
+				double value = values[i];
+				Map<String, Double> result = run(input, parameter, value, landUse);
+				String note = result.containsKey("note")
+						? "Init-Value Soil % lowered to the new field capacity" : "";
+				appendRow(csv, parameter.name, LEVELS[i], value, note, result, base);
+				checkEtp(parameter.name + " " + LEVELS[i], result.get("ETP_Input") / days);
 				double change = 0.;
 				for (String output : new String[] { "ETaTotal", "Seepage", "Runoff_total" })
 				{
@@ -189,6 +171,15 @@ public class SensitivityRun
 		System.out.println("\nTable written to " + output);
 	}
 
+	static double[] sensitivityValues(double min, double defaultValue, double max)
+	{
+		if (min > defaultValue || defaultValue > max)
+		{
+			throw new IllegalArgumentException("Default parameter value must be within its valid sensitivity limits");
+		}
+		return new double[] { min, (min + defaultValue) / 2., defaultValue, (defaultValue + max) / 2., max };
+	}
+
 	static void checkEtp(String run, double meanEtpPerDay)
 	{
 		if (meanEtpPerDay < 0. || meanEtpPerDay > 10.)
@@ -202,8 +193,9 @@ public class SensitivityRun
 	{
 		if (parameter.landUseColumn)
 		{
+			Map<String, String> row = landUseRow(input, landUse);
 			String column = parameter.name.startsWith("LAI") ? "MaxLAI" : parameter.name;
-			return Double.parseDouble(landUseRow(input, landUse).get(column));
+			return Double.parseDouble(row.get(column));
 		}
 		if (parameter.name.equals("Root Depth"))
 		{
@@ -214,10 +206,85 @@ public class SensitivityRun
 		return value == null ? parameter.defaultValue : Double.parseDouble(value);
 	}
 
+	static double[] parameterBounds(Parameter parameter, Map<String, String> soil, Path input, String landUse)
+			throws IOException
+	{
+		double min = parameter.min;
+		double max = parameter.max;
+		if (parameter.name.equals("Field Capacity %"))
+		{
+			min = Math.max(min, Math.nextUp(Double.parseDouble(soil.get("Permanent Wilting Point %"))));
+			String startOfReduction = soil.get("Start of Reduction %");
+			if (startOfReduction != null) min = Math.max(min, Double.parseDouble(startOfReduction));
+		}
+		else if (parameter.name.equals("Permanent Wilting Point %"))
+		{
+			max = Math.min(max, Math.nextDown(Double.parseDouble(soil.get("Field Capacity %"))));
+			String startOfReduction = soil.get("Start of Reduction %");
+			if (startOfReduction != null)
+			{
+				max = Math.min(max, Math.nextDown(Double.parseDouble(startOfReduction)));
+			}
+		}
+		else if (parameter.name.equals("Init-Value Soil %"))
+		{
+			max = Math.min(max, Double.parseDouble(soil.get("Field Capacity %")));
+		}
+		else if (parameter.name.equals("Measurement height"))
+		{
+			double vegetationHeight = Double.parseDouble(soil.getOrDefault("Vegetation height", "0.12"));
+			min = Math.max(min, Math.nextUp(0.67 * vegetationHeight));
+		}
+		else if (parameter.name.equals("Vegetation height"))
+		{
+			double measurementHeight = Double.parseDouble(soil.getOrDefault("Measurement height", "2.0"));
+			max = Math.min(max, Math.nextDown(measurementHeight / 0.67));
+		}
+		else if (parameter.name.equals("G5"))
+		{
+			double lowerTemperature = Double.parseDouble(soil.getOrDefault("TL", "0."));
+			double upperTemperature = Double.parseDouble(soil.getOrDefault("TH", "40."));
+			min = Math.max(min, Math.nextUp(lowerTemperature));
+			max = Math.min(max, Math.nextDown(upperTemperature));
+		}
+		else if (parameter.name.equals("TH"))
+		{
+			double lowerTemperature = Double.parseDouble(soil.getOrDefault("TL", "0."));
+			double optimumTemperature = Double.parseDouble(soil.getOrDefault("G5", "11.0764"));
+			min = Math.max(min, Math.nextUp(Math.max(lowerTemperature, optimumTemperature)));
+		}
+		else if (parameter.name.equals("TL"))
+		{
+			double upperTemperature = Double.parseDouble(soil.getOrDefault("TH", "40."));
+			double optimumTemperature = Double.parseDouble(soil.getOrDefault("G5", "11.0764"));
+			max = Math.min(max, Math.nextDown(Math.min(upperTemperature, optimumTemperature)));
+		}
+		return new double[] { min, max };
+	}
+
 	/** Runs the model on a copy of the input with one parameter changed (none for the base run) and sums the outputs. */
 	static Map<String, Double> run(Path input, Parameter parameter, double value, String landUse) throws IOException
 	{
 		Path dir = Files.createTempDirectory("simpel-sensitivity");
+		try
+		{
+			return runInTemporaryDirectory(input, parameter, value, landUse, dir);
+		}
+		finally
+		{
+			try (Stream<Path> paths = Files.walk(dir))
+			{
+				for (Path path : (Iterable<Path>) paths.sorted(Comparator.reverseOrder())::iterator)
+				{
+					Files.delete(path);
+				}
+			}
+		}
+	}
+
+	private static Map<String, Double> runInTemporaryDirectory(Path input, Parameter parameter, double value,
+			String landUse, Path dir) throws IOException
+	{
 		try (Stream<Path> files = Files.list(input))
 		{
 			for (Path file : (Iterable<Path>) files::iterator)
@@ -292,10 +359,10 @@ public class SensitivityRun
 		return sums;
 	}
 
-	static void appendRow(StringBuilder csv, String name, double factor, double value, String note,
+	static void appendRow(StringBuilder csv, String name, String level, double value, String note,
 			Map<String, Double> result, Map<String, Double> base)
 	{
-		csv.append(name).append('\t').append(factor).append('\t').append(Double.isNaN(value) ? "" : String.valueOf(value))
+		csv.append(name).append('\t').append(level).append('\t').append(Double.isNaN(value) ? "" : String.valueOf(value))
 				.append('\t').append(note);
 		for (String output : OUTPUTS) csv.append('\t').append(String.format(Locale.ROOT, "%.4f", result.get(output)));
 		csv.append('\t').append(String.format(Locale.ROOT, "%.4f", result.get(FINAL_STORAGE)));
@@ -364,15 +431,14 @@ public class SensitivityRun
 		throw new IllegalArgumentException("land use " + landUse + " not found");
 	}
 
-	/** Changes a column of the land-use row; "LAI" scales MinLAI and MaxLAI together (keeps MinLAI <= MaxLAI). */
+	/** Changes one column of the land-use row; this land use uses one shared value for both LAI limits. */
 	static void setLandUseValue(Path dir, String landUse, Parameter parameter, double value) throws IOException
 	{
 		Path file = dir.resolve(LandUse.FILE_NAME);
 		Map<String, String> row = landUseRow(dir, landUse);
 		if (parameter.name.startsWith("LAI"))
 		{
-			double factor = value / Double.parseDouble(row.get("MaxLAI"));
-			row.put("MinLAI", String.valueOf(Double.parseDouble(row.get("MinLAI")) * factor));
+			row.put("MinLAI", String.valueOf(value));
 			row.put("MaxLAI", String.valueOf(value));
 		}
 		else
