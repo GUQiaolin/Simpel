@@ -11,10 +11,11 @@ import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 
 public class SimpelModel
 {	
-	private String directory;
+	private Path runFile;
 	
 	public final static int PRECIPITATION=0; 
 	public final static int SNOW_WATER_EQUI=1; 
@@ -59,9 +60,6 @@ public class SimpelModel
     public final static int NUMBER_OF_COLUMNS=38;
     
     public final static double SECONDS_PER_DAY = 86400.;
-    // Default fraction of the soil water deficit (field capacity minus storage) that can infiltrate per day;
-    // set with "Infiltration fraction" in Soil_physics.txt
-    public final static double INFILTRATION_FRACTION_PER_DAY = 0.25;
     // Upper limit of the Haude potential evapotranspiration
     public final static double HAUDE_MAX_ETP_PER_DAY = 7.;   // mm/day
     // Haude uses the air temperature and humidity at this hour
@@ -73,10 +71,9 @@ public class SimpelModel
     public final String linefeed = "\n";
     private String[] bucket_model_dates;
     
-    private Boolean readETfromFile = null; // null: decide from the ET0 column in Global_Input.txt
     private String commandLine = "(called from Java)";
 
-    // Base name for the per-run results and log folder in the input directory
+    // Base name for the per-run results and log folder, next to run.txt
     public final static String OUTPUT_FOLDER = "output";
     public final static String OUTPUT_FILE = "SIMPLE_bucket_model.csv";
 	private static final DateTimeFormatter OUTPUT_TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
@@ -91,28 +88,29 @@ public class SimpelModel
 		SimpelModel s = new SimpelModel();
 		if (args.length<1)
 		{
-			System.err.println("Usage: java thud.simpel.SimpelModel <input directory> [readET|dontReadET]");
+			System.err.println("Usage: java thud.simpel.SimpelModel <run.txt, or the folder that contains it>");
 			System.exit(1);
 		}
-		s.setDirectory(args[0]);
-		s.commandLine = "java thud.simpel.SimpelModel " + String.join(" ", args);
 		if (args.length>1)
 		{
-			String arg1 = args[1];
-			s.setReadETFromFile(arg1);
+			System.err.println("Unexpected argument '" + args[1] + "': the readET/dontReadET switch was removed, "
+					+ "set et_method = ET0 in run.txt to read ET0 from the forcing");
+			System.exit(1);
 		}
+		s.setRunFile(args[0]);
+		s.commandLine = "java thud.simpel.SimpelModel " + String.join(" ", args);
 		s.process();
 	}
 	
 	/**
-	 * Runs the model on the input directory. The results and a log of everything printed to the console
-	 * (System.out and System.err, including an error that stops the run) are written to the folder
-	 * output_<yyyyMMdd_HHmmss>/ of the input directory: SIMPLE_bucket_model.csv and SIMPEL_log.txt.
+	 * Runs the model for run.txt. The results, a log of everything printed to the console (System.out and
+	 * System.err, including an error that stops the run) and a copy of run.txt are written to the folder
+	 * output_<yyyyMMdd_HHmmss>/ next to run.txt: SIMPLE_bucket_model.csv, SIMPEL_log.txt and run.txt.
 	 */
 	public void process()
 	{
 		LocalDateTime start = LocalDateTime.now();
-		Path outputDirectory = outputDirectory(Paths.get(directory), start);
+		Path outputDirectory = outputDirectory(runFile.toAbsolutePath().getParent(), start);
 		Path log = outputDirectory.resolve("SIMPEL_log.txt");
 		PrintStream console = System.out;
 		PrintStream consoleErr = System.err;
@@ -124,9 +122,13 @@ public class SimpelModel
 			{
 				System.out.println("SIMPEL run started " + start.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 				System.out.println("Command line: " + commandLine);
-				System.out.println("Input directory: " + Paths.get(directory).toAbsolutePath().normalize());
+				System.out.println("Run file: " + runFile.toAbsolutePath().normalize());
 				System.out.println("Output directory: " + outputDirectory.toAbsolutePath().normalize());
 				System.out.println();
+				if (Files.isRegularFile(runFile))
+				{
+					Files.copy(runFile, outputDirectory.resolve(ModelParameters.FILE_NAME));
+				}
 				run(outputDirectory);
 				System.out.println("\nResults written to " + outputDirectory.resolve(OUTPUT_FILE));
 			}
@@ -189,60 +191,36 @@ public class SimpelModel
 		ModelParameters parameters;
 		try
 		{
-			forcing = Forcing.read(Paths.get(directory, "Global_Input.txt"));
-			parameters = ModelParameters.read(Paths.get(directory, "Soil_physics.txt"));
+			parameters = ModelParameters.read(runFile);
+			System.out.println("Forcing: " + parameters.forcingFile);
+			System.out.println("Parameters: " + parameters.parametersDirectory);
+			for (Map.Entry<String, String> override : parameters.overrides.entrySet())
+			{
+				System.out.println("Override from run.txt: " + override.getKey() + " = " + override.getValue());
+			}
+			for (String note : parameters.notes)
+			{
+				System.out.println(note);
+			}
+			System.out.println();
+			forcing = Forcing.read(parameters.forcingFile);
 		}
 		catch (IOException e)
 		{
 			throw new UncheckedIOException(e);
 		}
-		// Without a command-line choice, read ET0 whenever the column is present, except with ET method PM
-		// (which computes its own demand and cannot be combined with ET0 from file)
-		if (readETfromFile == null)
+		boolean readEt0 = ModelParameters.ET0.equals(parameters.etMethod);
+		if (readEt0 && !forcing.hasEt0())
 		{
-			readETfromFile = forcing.hasEt0() && !ModelParameters.PM.equals(parameters.etMethod);
-			if (forcing.hasEt0() && !readETfromFile)
-			{
-				System.out.println("Note: the ET0 column of Global_Input.txt is ignored with ET method " + ModelParameters.PM);
-			}
+			throw new IllegalArgumentException("et_method = ET0 needs an ET0 column in " + parameters.forcingFile.getFileName());
 		}
-		if (readETfromFile && !forcing.hasEt0())
+		if (!readEt0 && forcing.hasEt0())
 		{
-			throw new IllegalArgumentException("readET was requested but Global_Input.txt has no ET0 column");
-		}
-		LandUse landUse;
-		HaudeCoefficients haude = null;
-		try
-		{
-			if (!Files.exists(Paths.get(directory, LandUse.FILE_NAME)) && Files.exists(Paths.get(directory, "Land_Use.txt")))
-			{
-				throw new IllegalArgumentException(LandUse.FILE_NAME + " not found. Land_Use.txt and LAI_model.txt have been "
-						+ "replaced by " + LandUse.FILE_NAME + " (one row per land use) and " + HaudeCoefficients.FILE_NAME
-						+ "; see GLOSSARY.md");
-			}
-			landUse = LandUse.read(Paths.get(directory, LandUse.FILE_NAME), parameters.landUse);
-			// Haude coefficients are only needed for ET method HAUDE without ET0 from file (otherwise they only fill ETP_Coeff)
-			boolean haudeNeeded = ModelParameters.HAUDE.equals(parameters.etMethod) && !readETfromFile;
-			if (haudeNeeded || Files.exists(Paths.get(directory, HaudeCoefficients.FILE_NAME)))
-			{
-				haude = HaudeCoefficients.read(Paths.get(directory, HaudeCoefficients.FILE_NAME), parameters.landUse);
-			}
-		}
-		catch (IOException e)
-		{
-			throw new UncheckedIOException(e);
-		}
-		parameters.applyLandUse(landUse);
-		for (String unused : new String[] {"Land_Use.txt", "LAI_model.txt"})
-		{
-			if (Files.exists(Paths.get(directory, unused)))
-			{
-				System.out.println("Note: " + unused + " is no longer read (replaced by " + LandUse.FILE_NAME + ")");
-			}
+			System.out.println("Note: the ET0 column of the forcing is not used with et_method = " + parameters.etMethod);
 		}
 		String output = outputDirectory.resolve(OUTPUT_FILE).toString();
 
-		double[][] bucket_model = SIMPLE_function(forcing, parameters, landUse, haude);
+		double[][] bucket_model = SIMPLE_function(forcing, parameters, parameters.landUseParameters, parameters.haude);
 		write_csv(bucket_model, output);
 
 	}
@@ -264,42 +242,30 @@ public class SimpelModel
 		double Init_Value_Soil=parameters.initialSoilWater();
 		double Depth_of_soil=parameters.soilDepthMm();
 		String Land_use=parameters.landUse;
+		String Soil=parameters.soilName;
 		double Minimum_LAI=landUse.minimumLai();
 		double Maximum_LAI=landUse.maximumLai();
 		double Land_use_fraction=parameters.landUseFraction;
-		double layer_thickness=parameters.layerThickness;
-		double intc_drainage_coeff_b=parameters.drainageCoefficientB;
-		double intc_drainage_max_d=parameters.maxDrainageRate;
+		double layer_thickness=landUse.layerThickness;
+		double intc_drainage_coeff_b=landUse.drainageCoefficientB;
+		double intc_drainage_max_d=landUse.maxDrainageRate;
 		double Direct_runoff_factor=landUse.directRunoffFactor;
 		double Glugla_Coeff_c=parameters.gluglaCoefficient;
 		double Lambda=parameters.gluglaLambda();
 		double Infiltration_fraction=parameters.infiltrationFraction;
 		double Cap_Litter=landUse.litterCapacity;
 		double Init_Value_Litter=parameters.initialLitter;
-		double Litter_Reduction_factor=parameters.litterReductionFactor;
+		double Litter_Reduction_factor=landUse.litterReductionFactor;
 
-		// The time step, day of year and month come from the Date column of Global_Input.txt
+		// The time step, day of year and month come from the Date column of the forcing
 		LocalDateTime[] dates = forcing.dates;
 		double timestep = forcing.timestepHours;
-		if (parameters.has(ModelParameters.TIMESTEP))
-		{
-			double configuredTimestep = parameters.optional(ModelParameters.TIMESTEP, timestep);
-			if (Math.abs(configuredTimestep - timestep) > 1e-9)
-			{
-				throw new IllegalArgumentException("Timestep in Soil_physics.txt (" + configuredTimestep 
-						+ " h) does not match the dates in Global_Input.txt (" + timestep 
-						+ " h). The time step is now taken from the dates; remove the Timestep line.");
-			}
-		}
-
-
-
-
 		// Echo the parameters (given and derived) to the console and log
 		System.out.println("SIMPEL");
 		System.out.println("======");
 		System.out.println("\nParameters:");
 		System.out.println("Time step: "+String.format("%,.2f", timestep)+" hours");
+		System.out.println("Soil: "+Soil);
 		System.out.println("Field Capacity: "+String.format("%,.2f", Field_Capacity_Percent)+"%");
 		System.out.println("Permanent Wilting Point: "+String.format("%,.2f", Permanent_Wilting_Point)+"%");
 		System.out.println("Start of Reduction: "+String.format("%,.2f", Start_of_Reduction_Percent)+"%");
@@ -387,40 +353,28 @@ public class SimpelModel
 		  // time steps through division by nt.
 		  double Litter_Reduction_factor_dt = Litter_Reduction_factor / nt;
 
-		  // Evapotranspiration method: HAUDE (default), ET0 from Global_Input.txt (readET), or PM
+		  // Evapotranspiration method (et_method in run.txt): HAUDE, PM, or ET0 from the forcing
 		  String etMethod = parameters.etMethod;
 		  boolean usePenmanMonteith = etMethod.equals(ModelParameters.PM);
-		  if (!usePenmanMonteith && Double.isNaN(Start_of_Reduction_Percent))
-		  {
-			  throw new IllegalArgumentException("'" + ModelParameters.START_OF_REDUCTION_PERCENT + "' is required in Soil_physics.txt for ET method " 
-					  + (getReadETFromFile() ? "ET0 from file" : ModelParameters.HAUDE));
-		  }
-		  if (usePenmanMonteith && !Double.isNaN(Start_of_Reduction_Percent))
-		  {
-			  System.out.println("Note: '" + ModelParameters.START_OF_REDUCTION_PERCENT + "' is ignored with ET method " + ModelParameters.PM);
-		  }
+		  boolean readEt0 = etMethod.equals(ModelParameters.ET0);
 		  PenmanMonteithEvaporation penmanMonteith = null;
-		  double elevation = parameters.optional("Elevation", 0., -500., 9000.);
+		  double elevation = parameters.elevation;
 		  double[] netRadiation = null;
 		  if (usePenmanMonteith)
 		  {
 			  if (!forcing.hasKdown() || !forcing.hasWindSpeed())
 			  {
 				  throw new IllegalArgumentException("ET method " + ModelParameters.PM 
-						  + " needs KDOWN and WindSpeed columns in Global_Input.txt");
+						  + " needs KDOWN and WindSpeed columns in the forcing");
 			  }
-			  if (getReadETFromFile())
-			  {
-				  throw new IllegalArgumentException("ET method " + ModelParameters.PM + " cannot be combined with reading ET0 from file");
-			  }
-			  penmanMonteith = configurePenmanMonteith(parameters);
+			  penmanMonteith = parameters.penmanMonteith();
 			  System.out.println("ET method: " + ModelParameters.PM + " (surface conductance after Jarvi et al. 2011)");
 			  // Available energy = net radiation from the forcing: the QN column if present, otherwise computed
 			  // from KDOWN and LDOWN (clear-sky LDOWN if that column is missing too)
 			  netRadiation = new double[rows];
 			  if (forcing.hasNetRadiation())
 			  {
-				  System.out.println("Net radiation: QN column of Global_Input.txt");
+				  System.out.println("Net radiation: QN column of the forcing");
 			  }
 			  else if (!forcing.hasLdown())
 			  {
@@ -445,12 +399,12 @@ public class SimpelModel
 		  // Haude is a daily method based on the 14:00 temperature and humidity. For sub-daily steps the
 		  // daily value is computed from the row at 14:00 (or the nearest hour) and spread over the day's
 		  // steps in proportion to KDOWN, or evenly when KDOWN is missing or the day is incomplete.
-		  if (getReadETFromFile())
+		  if (readEt0)
 		  {
-			  System.out.println("Reading external ETP from file...");
+			  System.out.println("ET method: " + ModelParameters.ET0 + " (ET0 column of the forcing)");
 		  }
 		  double[] haudeStepEtp = null;
-		  if (!usePenmanMonteith && !getReadETFromFile() && timestep < 24.)
+		  if (etMethod.equals(ModelParameters.HAUDE) && timestep < 24.)
 		  {
 			  haudeStepEtp = haudeSubDaily(forcing, haude, southernHemisphere);
 		  }
@@ -485,7 +439,7 @@ public class SimpelModel
 		    bucket_model[krow][ETP_COEFF] = haude == null ? 0. : haude.forMonth(month, southernHemisphere);
 		    
 //		    # col 6: F ETP Input
-		    if(readETfromFile)
+		    if(readEt0)
 		    {   
 		    	  //# check if input variable is given
 //		          # if yes, use given ETP0
@@ -752,32 +706,6 @@ public class SimpelModel
 		return Math.min(Math.max(0., row[REST_ETA] * dryToWetRatio), Math.max(0., row[BALANCE_SOIL] - wiltingPoint));
 	}
 
-	/** Reads the PM parameters from Soil_physics.txt; keys that are absent keep the defaults. */
-	static PenmanMonteithEvaporation configurePenmanMonteith(ModelParameters parameters)
-	{
-		PenmanMonteithEvaporation pm = new PenmanMonteithEvaporation();
-		pm.albedo = parameters.optional("Albedo", pm.albedo, 0., 1.);
-		pm.surfaceEmissivity = parameters.optional("Surface emissivity", pm.surfaceEmissivity, 0.5, 1.);
-		pm.vegetationHeight = parameters.optional("Vegetation height", pm.vegetationHeight, 0.001, 100.);
-		pm.soilSurfaceConductance = parameters.optional("Soil surface conductance", pm.soilSurfaceConductance, 0., 50.);
-		pm.measurementHeight = parameters.optional("Measurement height", pm.measurementHeight, 0.1, 500.);
-		if (pm.measurementHeight <= 0.67 * pm.vegetationHeight)
-		{
-			throw new IllegalArgumentException("'Measurement height' (" + pm.measurementHeight + " m) must be above the "
-					+ "displacement height 0.67 x 'Vegetation height' (" + 0.67 * pm.vegetationHeight + " m)");
-		}
-		pm.maxConductanceG1 = parameters.optional("G1", pm.maxConductanceG1);
-		pm.kdownShapeG2 = parameters.optional("G2", pm.kdownShapeG2);
-		pm.humiditySlopeG3 = parameters.optional("G3", pm.humiditySlopeG3);
-		pm.humidityThresholdG4 = parameters.optional("G4", pm.humidityThresholdG4);
-		pm.optimumTemperatureG5 = parameters.optional("G5", pm.optimumTemperatureG5);
-		pm.soilMoistureShapeG6 = parameters.optional("G6", pm.soilMoistureShapeG6);
-		pm.upperTemperatureTH = parameters.optional("TH", pm.upperTemperatureTH);
-		pm.lowerTemperatureTL = parameters.optional("TL", pm.lowerTemperatureTL);
-		pm.maxKdown = parameters.optional("Kmax", pm.maxKdown);
-		return pm;
-	}
-
 	/**
 	 * Evaporation from the litter layer as in the SIMPEL spreadsheet: MIN(remaining demand; MIN(capacity;
 	 * content + throughfall) / factor). The reduction factor divides the smaller of the capacity and the
@@ -881,23 +809,20 @@ public class SimpelModel
 		writeFile(sb.toString(), output);
 	}
 
-	public void setDirectory(String directory)
+	/** The run file: run.txt itself, or the folder that contains it. */
+	public void setRunFile(String path)
 	{
-		this.directory = directory;
-	}	
-	public boolean getReadETFromFile()
-	{
-		return readETfromFile != null && readETfromFile;
-	}
-	public void setReadETFromFile(String readET)
-	{
-		if (readET.equals("readET"))
+		Path given = Paths.get(path);
+		if (Files.isDirectory(given))
 		{
-			readETfromFile=true;
+			if (!Files.exists(given.resolve(ModelParameters.FILE_NAME)) && Files.exists(given.resolve("Soil_physics.txt")))
+			{
+				throw new IllegalArgumentException(given + " has the old input layout (Soil_physics.txt, Global_Input.txt, "
+						+ "Land_Use_Parameters.txt). It is replaced by run.txt, a parameters folder (soil.txt, land_use.txt, pm.txt, "
+						+ "haude.txt) and a forcing file; see readme.md");
+			}
+			given = given.resolve(ModelParameters.FILE_NAME);
 		}
-		else
-		{
-			readETfromFile=false;
-		}
+		this.runFile = given;
 	}
 }

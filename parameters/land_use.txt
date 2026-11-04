@@ -1,0 +1,39 @@
+# Land-use parameters, one row per land use, including the phenology (LAI over the year) and the surface
+# properties used by the PM method. The land use of a run is chosen with 'land_use = <name>' in run.txt;
+# single values can be overridden there, e.g. land_use.max_lai = 3. To add a land use, add a row.
+# '-' = not given. What is needed follows from the components of the land use:
+#   max_lai = 0          no canopy: icept_* not needed (ignored with a note)
+#   min_lai = max_lai    constant LAI: the four phenology dates are not needed
+#   min_lai < max_lai    phenology dates; '-' uses the default 121, 135, 305, 319 (1-15 May, 1-15 Nov)
+#   litter_cap = 0       no litter layer: litter_reduction not needed
+#   et_method = PM       albedo, emissivity and veg_height are required
+#
+# phenology
+#   min_lai, max_lai        leaf area index outside / inside the growing season                     m2/m2
+#   green_up_start, green_up_end, senescence_start, senescence_end
+#                           days of the year, written for the northern hemisphere                    doy
+# water balance
+#   root_depth              depth of the soil water store (sets the size of the bucket)              cm
+#                           above 0; for (nearly) sealed surfaces such as urban use a small value
+#   degree_day              snow melt per degree above 0 degC                                         mm/degC/day
+#   direct_runoff           share of the water passing the litter layer that runs off directly        %
+#   litter_cap              storage capacity of the litter layer                                      mm
+#   litter_reduction        litter drying factor: at most 1/factor of the water evaporates per day    -
+#   icept_cap_per_lai       interception capacity per unit LAI (Rutter model)                         mm
+#   icept_drain_b           drainage coefficient b of the interception store                          -
+#   icept_drain_max         maximum drainage rate of the interception store                           mm/day
+# surface (PM)
+#   albedo, emissivity      of the surface                                                            -
+#   veg_height              vegetation height, sets the roughness                                     m
+#
+# LAI, degree-day, direct runoff and litter capacity from the original SIMPEL land-use table (Hoermann);
+# interception, root depth and litter drying factor as in the SIMPEL examples.
+land_use        min_lai  max_lai  green_up_start  green_up_end  senescence_start  senescence_end  root_depth  degree_day  direct_runoff  litter_cap  litter_reduction  icept_cap_per_lai  icept_drain_b  icept_drain_max  albedo  emissivity  veg_height
+beech           2.50     6.00     -               -             -                 -               100         2.40        0              1.50        3                 0.35               3.7            2.88             -       -           -
+corn            0.50     3.00     -               -             -                 -               100         3.00        20             0.00        -                 0.35               3.7            2.88             -       -           -
+grassland       1.00     2.00     -               -             -                 -               100         3.00        15             0.00        -                 0.35               3.7            2.88             -       -           -
+spruce          7.00     7.00     -               -             -                 -               100         1.80        0              2.00        3                 0.35               3.7            2.88             -       -           -
+sugar_beet      0.50     3.00     -               -             -                 -               100         3.00        20             0.00        -                 0.35               3.7            2.88             -       -           -
+urban           0.10     0.50     -               -             -                 -               1           5.00        50             0.00        -                 0.35               3.7            2.88             -       -           -
+winter_wheat    0.50     3.00     -               -             -                 -               100         3.00        20             0.00        -                 0.35               3.7            2.88             -       -           -
+irrigated_grass 2.00     2.00     -               -             -                 -               100         3.00        15             0.00        -                 0.35               3.7            2.88             0.18    0.98        0.12

@@ -1,0 +1,25 @@
+# SIMPEL run: hourly, Penman-Monteith, AU-Preston (Melbourne) January 2004, 40 m tower
+# Paths are relative to this file; results go to output_<yyyyMMdd_HHmmss>/ next to it.
+
+# inputs
+forcing    = ../../forcing/au_preston_2004-01_hourly.txt
+parameters = ../../parameters
+
+# what is simulated
+soil      = simpel_example    # row of soil.txt (default luvisol)
+land_use  = irrigated_grass   # row of land_use.txt
+et_method = PM                # HAUDE, PM or ET0 (ET0 column of the forcing)
+
+# site
+hemisphere         = S        # N or S; S shifts the phenology dates and Haude months by half a year
+land_use_fraction  = 0.75     # share covered by the land use, the rest is bare soil (default 1)
+elevation          = 90       # m, only for the air pressure if the forcing has no PRES column
+measurement_height = 40       # m, height of the wind and temperature measurement
+
+# initial state
+init_soil   = 24              # vol-% (default: field capacity)
+init_litter = 0               # mm
+
+# overrides of single table values, e.g.
+# soil.field_capacity = 30
+# pm.G1               = 10

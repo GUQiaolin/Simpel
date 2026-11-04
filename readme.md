@@ -5,63 +5,97 @@ This repository includes a JAVA implementation of the Soil Water Balance Model S
 * Flexible time step, also enabling sub-daily temporal integration of the water balance; the step is taken from the dates of the forcing (daily or 1–12 h)
 * New interception model (Rutter et al., 1971)
 * Snow model added (temperature index)
-* External evapotranspiration calculation (ET0 column)
+* External evapotranspiration calculation (`et_method = ET0`, ET0 column of the forcing)
 * Evapotranspiration method `PM`: Penman–Monteith with the surface conductance of Järvi et al. (2011), with the available energy taken straight from the radiation forcing (net radiation column `QN`, or computed from `KDOWN`/`LDOWN`).
-* Land-use lookup table (`Land_Use_Parameters.txt`, one row per land use) and a default phenology function for LAI
-* `Land Use Fraction`: the land use covers this share of the area, the gap is bare soil (with `PM` it evaporates through its own soil conductance)
-* Southern-hemisphere option (`Hemisphere;S`)
-* All inputs are checked before the run (missing or implausible values, misspelled keys, inconsistent soil values)
+* Parameter tables shared by all runs (`parameters/`: soil, land use with phenology, PM conductance, Haude), one row per soil or land use, with a default soil (Luvisol from loess) and a default phenology function for LAI
+* One `run.txt` per run that chooses the forcing, soil, land use and ET method and can override any table value
+* `land_use_fraction`: the land use covers this share of the area, the gap is bare soil (with `PM` it evaporates through its own soil conductance)
+* Southern-hemisphere option (`hemisphere = S`)
+* All inputs are checked before the run (missing or implausible values, misspelled keys and columns, inconsistent soil values)
 
 ## Input files
 
-| File | Contents |
-|---|---|
-| `Global_Input.txt` | Forcing, one row per time step: `Date`, `P`, `Ta`, `RH`, and for `PM` `KDOWN`, `WindSpeed` (+ optional `QN`, `LDOWN`, `PRES`). There is no `DOY` column: day of year and month come from `Date` |
-| `Soil_physics.txt` | Soil, canopy, site and method parameters (`key;value;description`) |
-| `Land_Use_Parameters.txt` | Land-use dependent parameters: LAI range, degree-day factor, direct runoff, litter capacity, optional root depth and phenology dates |
-| `Haude_Coefficients.txt` | Monthly Haude coefficients per land use (only for ET method `HAUDE`) |
+```
+parameters/                 shared parameter tables (one row per soil or land use)
+  soil.txt                  soil properties; default soil: luvisol (Parabraunerde from loess)
+  land_use.txt              land use, phenology (LAI over the year), surface (albedo, emissivity, height)
+  pm.txt                    Jarvi et al. (2011) conductance G1 ... Kmax per land use (et_method = PM)
+  haude.txt                 monthly Haude coefficients per land use (et_method = HAUDE)
+forcing/                    forcing files, any name: Date, P, Ta, RH (+ KDOWN, WindSpeed, QN, LDOWN, PRES, ET0)
+runs/<run>/
+  run.txt                   forcing and parameters paths, soil, land use, ET method, site, initial state, overrides
+  output_<yyyyMMdd_HHmmss>/ results, log and a copy of run.txt
+```
 
-`GLOSSARY.md` describes every column, key and output column with units, and explains the root depth, the
-phenology and the ET methods.
+A minimal `run.txt` (paths are relative to it):
+
+```
+forcing    = ../../forcing/simpel_1995_daily.txt
+parameters = ../../parameters
+land_use   = grassland
+et_method  = HAUDE            # HAUDE, PM or ET0
+
+# change single table values for this run only
+soil.field_capacity = 34
+land_use.max_lai    = 3
+```
+
+The tables hold the shared defaults; `run.txt` says what this run uses and what is different. Every value
+needed depends on what the land use has: a land use without leaves (`max_lai = 0`) needs no interception
+values, one without litter (`litter_cap = 0`) no litter drying factor, and only `PM` needs the surface values
+and `pm.txt`. `GLOSSARY.md` describes every key and column with units, ranges and sources (including the
+default soil), and lists where each key of the old input files went.
 
 ## How to run the model
-Compile the source and call java on the command line with the arguments thud.simpel.SimpelModel (i.e., the main class) and the input directory (see run.sh script):
+Compile the source and call java with the main class thud.simpel.SimpelModel and the run (`run.txt` or the
+folder that contains it; see run.sh):
 
 ```
-./run.sh                                   # compiles and runs example/
-java -cp bin thud.simpel.SimpelModel <input directory> [readET|dontReadET]
+./run.sh                                   # compiles and runs runs/daily_haude
+./run.sh runs/hourly_pm
+java -cp bin thud.simpel.SimpelModel runs/hourly_pm/run.txt
 ```
 
-The results (`SIMPLE_bucket_model.csv`) and a log of the run (`SIMPEL_log.txt`, everything printed to the console including errors) are written to a timestamped folder `output_<yyyyMMdd_HHmmss>/` in the input directory. Each run gets its own folder.
+The results (`SIMPLE_bucket_model.csv`), a log of the run (`SIMPEL_log.txt`, everything printed to the
+console including errors, the overrides and notes on defaults used) and a copy of `run.txt` are written to a
+timestamped folder `output_<yyyyMMdd_HHmmss>/` next to `run.txt`. Each run gets its own folder.
 
-Examples:
+Example runs (`runs/`):
 
-* `example/` – daily run with the Haude method (original example, 1995, Central Europe).
-* `example_hourly/` – hourly run with `ET method;PM`, forced with January 2004 of the AU-Preston (Melbourne) tower data from the TARGET repository, averaged to hourly (`Hemisphere;S`). That data set has no precipitation, so P is 0 and the run shows a dry-down; the measurement height is the 40 m tower. It uses an added land use `irrigated_grass`.
-* `example_hourly_winter/` and `example_hourly_winter_rain/` – paired, synthetic Germany-like January scenarios for sensitivity comparisons, with no rain and three rain events respectively.
-* `example_daily_pm/` – the same month aggregated to daily means (for comparison only, see "Penman–Monteith on a daily time step" below).
+* `daily_haude` – daily run with the Haude method (original example, 1995, Central Europe).
+* `hourly_pm` – hourly run with `et_method = PM`, forced with January 2004 of the AU-Preston (Melbourne) tower data from the TARGET repository, averaged to hourly (`hemisphere = S`). That data set has no precipitation, so P is 0 and the run shows a dry-down; the measurement height is the 40 m tower. It uses the land use `irrigated_grass`.
+* `hourly_pm_winter` and `hourly_pm_winter_rain` – paired, synthetic Germany-like January scenarios for sensitivity comparisons, with no rain and three rain events respectively.
+* `daily_pm` – the same month as `hourly_pm` aggregated to daily means (for comparison only, see "Penman–Monteith on a daily time step" below).
 
-`./test.sh` compiles everything, runs the unit tests (Penman–Monteith against an independent Python implementation, phenology, single bucket steps, input checks) and checks the three examples against `test/reference/`, including the water balance at every step.
+The example runs use the soil `simpel_example` of the original SIMPEL example, so their results are
+unchanged; leave out `soil` to use the default `luvisol`.
+
+`./test.sh` compiles everything, runs the unit tests (Penman–Monteith against an independent Python implementation, phenology, single bucket steps, input checks) and checks `daily_haude`, `hourly_pm` and `daily_pm` against `test/reference/`, including the water balance at every step.
 
 ## Sensitivity of the water fluxes
 
 ```
-./sensitivity.sh [input directory]     # default: example_hourly_winter/ (PM)
+./sensitivity.sh [run folder or run.txt]     # default: runs/hourly_pm_winter (PM)
 ```
 
-This runs a one-at-a-time sensitivity analysis. Each parameter is tested at five levels: its valid lower limit,
+This runs a one-at-a-time sensitivity analysis: each test run is the `run.txt` of the run with one override
+added (e.g. `soil.field_capacity = 30`). Each parameter is tested at five levels: its valid lower limit,
 the midpoint from the lower limit to its configured value, its configured value, the midpoint from its configured
 value to the valid upper limit, and the valid upper limit. Other parameters stay at their configured values.
-Cross-parameter constraints (such as `MinLAI <= MaxLAI` and `Permanent Wilting Point % < Field Capacity %`)
-are respected. `MinLAI` and `MaxLAI` are varied together, with both set to the tested `MaxLAI` value.
+Cross-parameter constraints (such as `wilting_point < field_capacity`) are respected. `min_lai` and `max_lai`
+are varied together (`land_use.lai`), with both set to the tested value.
 
-* soil keys
-* canopy and litter keys
-* the land-use columns (shared `MinLAI`/`MaxLAI`, `DirectRunoff`, `LitterCap`, `DegreeDay`, `RootDepth`)
-* all `PM` keys
+* the soil columns, `init_soil`, `init_litter` and `land_use_fraction`
+* the land-use columns (shared `min_lai`/`max_lai`, `root_depth`, `direct_runoff`, `litter_cap`, `degree_day`,
+  interception and litter drying)
+* with `PM`: `albedo`, `emissivity`, `veg_height`, `measurement_height`, `elevation`, `soil_surface_conductance`
+  and the `pm.txt` columns
 
-The valid limits follow each parameter's allowed range and are tightened where needed to keep combinations valid.
-For example, `MinLAI` cannot exceed `MaxLAI`, and initial soil water cannot exceed field capacity.
+Parameters without effect in the run are skipped (e.g. `PM` parameters with `HAUDE`, interception without
+leaves). The valid limits follow each parameter's allowed range and are tightened where needed to keep
+combinations valid: initial soil water cannot exceed field capacity (a lower field capacity lowers `init_soil`
+with it, noted in the table), and a litter capacity above 0 on a land use without litter layer gets the
+drying factor 3.
 
 The table `output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv` lists, for every run, the sums over the run of:
 
@@ -73,43 +107,41 @@ The table `output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv` lists, for every run, t
 It also gives each value's change against the base run in %. The script prints a ranking by the largest change of
 ETaTotal, Seepage or Runoff_total, and flags a mean ETP outside 0–10 mm/day.
 
-The `example_hourly_winter/` forcing has no precipitation. A matching rain scenario is provided in
-`example_hourly_winter_rain/`, with 10, 20, and 40 mm hourly events on 15, 16, and 17 January 2004 at 12:00. Both
+The `hourly_pm_winter` forcing has no precipitation. A matching rain scenario is provided in
+`hourly_pm_winter_rain`, with 10, 20, and 40 mm hourly events on 15, 16, and 17 January 2004 at 12:00. Both
 use a synthetic, Germany-like January meteorological series based on the stated climate targets (2 °C mean air
 temperature, about 140 W/m² mean daily KDOWN peak, 290–295 W/m² LDOWN, and 4.5 m/s wind at 10 m). These are
 illustrative forcing values, not observed measurements. Run both:
 
 ```
-./sensitivity.sh example_hourly_winter/
-./sensitivity.sh example_hourly_winter_rain/
+./sensitivity.sh runs/hourly_pm_winter
+./sensitivity.sh runs/hourly_pm_winter_rain
 ```
 
-Each run writes `sensitivity_oat.csv` under a timestamped output folder in that input directory. With `PM`, LAI
-affects transpiration through LAI/MaxLAI; the sensitivity analysis changes both LAI limits together.
+Each run writes `sensitivity_oat.csv` under a timestamped output folder next to its `run.txt`. With `PM`, LAI
+affects transpiration through LAI/max_lai; the sensitivity analysis changes both LAI limits together.
 Open `plot_sensitivity_oat.ipynb` to compare the forcing precipitation, monthly water-balance summaries, and
 parameter sensitivities side by side for the dry and rainfall scenarios.
 
 ## Land Use Fraction: land use and bare-soil gap
 
-Each run models one land use (the `Land use` row of `Land_Use_Parameters.txt`). `Land Use Fraction` (f,
-formerly `Vegetation Fraction`) is the share of the area that this land use covers; the gap (1 − f) is bare
+Each run models one land use (the `land_use` row of `land_use.txt`). `land_use_fraction` (f, in `run.txt`,
+default 1; formerly `Vegetation Fraction`) is the share of the area that this land use covers; the gap (1 − f) is bare
 soil. Both share the litter layer and one soil store.
 
 * **Water:** precipitation (rain and snow melt) on the land use (f) enters the canopy interception
-  (capacity = `Layer Thickness` × LAI); precipitation on the gap (1 − f) falls through directly to the
+  (capacity = `icept_cap_per_lai` × LAI); precipitation on the gap (1 − f) falls through directly to the
   litter and the soil. This is the same as the former "vegetation fraction" and leaves `HAUDE`/ET0 results
   unchanged.
 * **Evapotranspiration with `PM`:** the dry-surface potential ET is computed for both parts and weighted by f:
   `ETP_dry = f · ETP_dry_lu + (1 − f) · ETP_dry_gap`. The land use transpires through the Järvi et al.
-  (2011) conductance (scaled by LAI/MaxLAI); the bare soil evaporates through `Soil surface conductance`
-  (default 5 mm s⁻¹ at field capacity) times the relative available water (W − PWP)/(FC − PWP). Before this
+  (2011) conductance (scaled by LAI/max_lai); the bare soil evaporates through `soil_surface_conductance`
+  (`soil.txt`, 5 mm s⁻¹ at field capacity) times the relative available water (W − PWP)/(FC − PWP). Before this
   change the Järvi conductance acted on the whole area, so a partly covered surface transpired as if fully
-  covered, and a land use with MaxLAI 0 could lose soil water only by seepage.
+  covered, and a land use with max_lai 0 could lose soil water only by seepage.
 * **Urban and other non-vegetated land uses** are represented as an ordinary land use with a low LAI, a
-  shallow root depth (e.g. 1 cm) and a high `DirectRunoff`; there is no separate sealed store.
-* **Updating old input:** rename the line `Vegetation Fraction` to `Land Use Fraction` in
-  `Soil_physics.txt` (the run stops with a message otherwise). For `PM`, `Soil surface conductance` is
-  optional. f = 1 reproduces the previous `PM` results exactly.
+  shallow root depth (e.g. 1 cm) and a high `direct_runoff`; there is no separate sealed store.
+* f = 1 reproduces the `PM` results from before the bare-soil gap was added exactly.
 
 ## Penman–Monteith on a daily time step is not recommended
 
@@ -128,13 +160,37 @@ The `PM` method runs on daily forcing, but use hourly (or at most 3-hourly) step
 * `Ta` accepts the alias `T14`, so a daily file prepared for Haude (14:00 temperatures) can silently enter
   `PM`.
 
-`example_daily_pm/` is kept only to compare with the hourly run of the same month.
+`runs/daily_pm` is kept only to compare with the hourly run of the same month.
 
 ## Changes in this version
 
+**New input structure** (breaking; the old files stop the run with a message saying where things moved):
+
+* `run.txt` per run replaces `Soil_physics.txt` and the `readET`/`dontReadET` argument. It names the forcing
+  file (any name) and the parameters folder, chooses soil, land use and `et_method` (`HAUDE`, `PM`, `ET0`),
+  and holds the site settings and the initial state. Results are written next to it, so settings and outputs
+  stay together, and each output folder keeps a copy of `run.txt`.
+* The parameters moved into shared tables, one row per soil or land use, so rows can be compared column by
+  column: `soil.txt` (soil properties only), `land_use.txt` (everything that depends on the land use: LAI and
+  phenology, root depth, snow, runoff, litter, interception, albedo, emissivity, vegetation height),
+  `pm.txt` (`G1` … `Kmax`) and `haude.txt`. Before, the land-use dependent interception and `PM` values were
+  single keys in `Soil_physics.txt` and did not change with the land use, and each example folder had its own,
+  diverging copy of the land-use table.
+* Any table value can be overridden in `run.txt` (`soil.field_capacity = 34`), so the tables can stay the
+  defaults.
+* What a land use needs follows from what it has: without leaves no interception values, without litter no
+  drying factor, phenology dates only for a seasonal LAI. A value without effect is noted in the log.
+* Default soil `luvisol` (Parabraunerde from loess, KA5 values; see `GLOSSARY.md`). The example runs keep the
+  soil of the original example (`simpel_example`) and give unchanged results.
+* Root depth is set in one place (`land_use.txt`) instead of `Soil_physics.txt` with a land-use override.
+* Keys and columns are in one style (`snake_case`), and every file uses one of two formats: `key = value`
+  (`run.txt`) or a whitespace table (parameters, forcing).
+* Dates may also be given as ISO 8601 (`2004-01-01`, `2004-01-01T13:00`).
+* `start_of_reduction` is only checked when it is used (`HAUDE`, `ET0`).
+
 Fixes, with the reason for each:
 
-* **Initial soil water above field capacity is rejected.** With `Init-Value Soil %` above `Field Capacity %`
+* **Initial soil water above field capacity is rejected.** With `init_soil` above `field_capacity`
   the infiltration limit (FC − storage) × fraction is negative. P-linf then became negative, so water was
   taken out of the soil and booked as surface runoff even on dry days. Water above FC should drain as
   seepage, not run off.
@@ -149,17 +205,17 @@ Fixes, with the reason for each:
   evaporation drops from 46.3 to 39.6 mm/yr.
 * **Input/output handling:**
   * An `ET0` column no longer stops a `PM` run; it is ignored with a note.
-  * `Haude_Coefficients.txt` is required only for `HAUDE` without ET0.
+  * The Haude coefficients are required only for `HAUDE`.
   * A failed write of the results stops the run instead of being reported as success.
 
 New features:
 
-* **`Land Use Fraction` and two-part `PM`.** See the section above.
-* **`Infiltration fraction`** (optional, default 0.25). The share of the soil deficit that may infiltrate
+* **`land_use_fraction` and two-part `PM`.** See the section above.
+* **`infiltration_fraction`** (`soil.txt`, 0.25 in the included soils). The share of the soil deficit that may infiltrate
   per day used to be a fixed constant. It decides between infiltration and surface runoff, so it is now a
   parameter that can be tested for sensitivity.
 * **Timestamped results folder and run log.** Results and `SIMPEL_log.txt` (the console output of the
-  run, including errors) are written to `<input dir>/output_<yyyyMMdd_HHmmss>/`.
+  run, including errors) are written to `output_<yyyyMMdd_HHmmss>/` next to `run.txt`.
 
 * **Sensitivity tool** (`sensitivity.sh`): see "Sensitivity of the water fluxes".
 
@@ -179,6 +235,7 @@ Clean-up, with unchanged results:
 * `PM`: neutral aerodynamic resistance (no stability correction); the Järvi et al. (2011) conductance parameters are from urban sites and need recalibration for other vegetation.
 
 ## References
+AG Boden (2005): Bodenkundliche Kartieranleitung, 5. Auflage (KA5). Bundesanstalt für Geowissenschaften und Rohstoffe, Hannover.
 Hörmann, G. (1997): SIMPEL - ein einfaches, benutzerfreundliches Bodenwassermodell zum Einsatz in der Ausbildung. Deutsche Gewässerkundliche Mitteilungen 41(2):67-72
 Hörmann, G., X. Zhang and N. Fohrer (2007): Comparison of a simple and a spatially distributed hydrologic model for the simulation of a lowland catchment in Northern Germany. Ecological Modelling, 209 (1): 21-28. 
 Järvi, L., Grimmond, C. S. B. and Christen, A. (2011): The Surface Urban Energy and Water Balance Scheme (SUEWS): Evaluation in Los Angeles and Vancouver. J. Hydrol. 411: 219-237, doi:10.1016/j.jhydrol.2011.10.001

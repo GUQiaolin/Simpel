@@ -17,18 +17,23 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
+import java.util.function.ToDoubleFunction;
 import java.util.stream.Stream;
 
 /**
  * One-at-a-time sensitivity of the water fluxes: each parameter is tested at its lower limit, midpoint to its
  * default, default, midpoint to its upper limit, and upper limit (all other parameters at their base value).
+ * Each test run is the run.txt of the input with one override (e.g. "soil.field_capacity = 30") added.
  *
- * Usage: java thud.simpel.SensitivityRun <input directory>
+ * Usage: java thud.simpel.SensitivityRun <run.txt, or the folder that contains it>
  *
- * Writes <input directory>/output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv: for each run the sums over the run of
+ * Writes output_<yyyyMMdd_HHmmss>/sensitivity_oat.csv next to run.txt: for each run the sums over the run of
  * the potential ET (ETP_Input, ETP_dry and its parts), the actual ET terms, seepage and runoff, the final soil
  * storage, and the change against the base run in %. Prints a ranking by the largest change of ETaTotal,
- * Seepage and Runoff_total, and flags a mean potential ET outside 0 - 10 mm/day.
+ * Seepage and Runoff_total, and flags a mean potential ET outside 0 - 10 mm/day. Parameters without effect for
+ * the run (PM parameters with another ET method, canopy parameters without leaves, litter drying without a
+ * litter layer) are left out.
  */
 public class SensitivityRun
 {
@@ -36,64 +41,75 @@ public class SensitivityRun
 	static final String[] OUTPUTS = { "ETP_Input", "ETP_dry", "ETP_dry_lu", "ETP_dry_gap", "ETaTotal", "I-Leaf", "I-Litter",
 			"ETa", "Seepage", "Surface_runoff", "Runoff_total" };
 	static final String FINAL_STORAGE = "Storage";
+	/** Sets both LAI limits of the land use (a constant LAI); the tested value is max_lai. */
+	static final String LAI = "land_use.lai";
+	/** Litter drying factor used when a litter capacity above 0 is tested on a land use without litter layer. */
+	static final double DEFAULT_LITTER_REDUCTION = 3.;
 
-	/** A parameter in Soil_physics.txt (key) or in the land-use row of Land_Use_Parameters.txt (column). */
+	/** A parameter of run.txt (key) or of a parameter table (table.column, set as an override in run.txt). */
 	static class Parameter
 	{
 		final String name;
-		final boolean landUseColumn;
-		final double defaultValue; // used when the key is absent from Soil_physics.txt
+		final ToDoubleFunction<ModelParameters> base;
+		final Predicate<ModelParameters> used;
 		final double min;
 		final double max;
 
-		Parameter(String name, boolean landUseColumn, double defaultValue, double min, double max)
+		Parameter(String name, ToDoubleFunction<ModelParameters> base, Predicate<ModelParameters> used, double min, double max)
 		{
 			this.name = name;
-			this.landUseColumn = landUseColumn;
-			this.defaultValue = defaultValue;
+			this.base = base;
+			this.used = used;
 			this.min = min;
 			this.max = max;
 		}
 	}
 
+	static boolean pm(ModelParameters p) { return p.etMethod.equals(ModelParameters.PM); }
+	static boolean canopy(ModelParameters p) { return p.landUseParameters.maximumLai() > 0.; }
+
 	static List<Parameter> parameters()
 	{
-		PenmanMonteithEvaporation pm = new PenmanMonteithEvaporation();
+		Predicate<ModelParameters> always = p -> true;
+		Predicate<ModelParameters> pmOnly = SensitivityRun::pm;
+		Predicate<ModelParameters> pmCanopy = p -> pm(p) && canopy(p);
 		List<Parameter> list = new ArrayList<Parameter>();
 		// soil
-		list.add(new Parameter("Root Depth", false, Double.NaN, 1., 10000.));
-		list.add(new Parameter("Field Capacity %", false, Double.NaN, 0., 100.));
-		list.add(new Parameter("Permanent Wilting Point %", false, Double.NaN, 0., 100.));
-		list.add(new Parameter("Init-Value Soil %", false, Double.NaN, 0., 100.));
-		list.add(new Parameter("Glugla coeff.", false, Double.NaN, 0., 1e6));
-		list.add(new Parameter("Infiltration fraction", false, SimpelModel.INFILTRATION_FRACTION_PER_DAY, 0., 1.));
+		list.add(new Parameter("land_use.root_depth", ModelParameters::rootDepth, always, 1., 10000.));
+		list.add(new Parameter("soil.field_capacity", p -> p.fieldCapacityPercent, always, 0., 100.));
+		list.add(new Parameter("soil.wilting_point", p -> p.wiltingPointPercent, always, 0., 100.));
+		list.add(new Parameter("soil.start_of_reduction", p -> p.startOfReductionPercent, p -> !pm(p), 0., 100.));
+		list.add(new Parameter("init_soil", p -> p.initialSoilPercent, always, 0., 100.));
+		list.add(new Parameter("soil.glugla_c", p -> p.gluglaCoefficient, always, 0., 1e6));
+		list.add(new Parameter("soil.infiltration_fraction", p -> p.infiltrationFraction, always, 0., 1.));
+		list.add(new Parameter("soil.soil_surface_conductance", p -> p.soil.soilSurfaceConductance, pmOnly, 0., 50.));
 		// land use and canopy
-		list.add(new Parameter("Land Use Fraction", false, Double.NaN, 0., 1.));
-		list.add(new Parameter("Layer Thickness", false, Double.NaN, 0., 10.));
-		list.add(new Parameter("Max. Drainage Rate", false, Double.NaN, 0., 1000.));
-		list.add(new Parameter("Drainage Coeff. b", false, Double.NaN, 0., 100.));
-		list.add(new Parameter("Init-Value Litter", false, Double.NaN, 0., 1000.));
-		list.add(new Parameter("Litter Reduction factor", false, Double.NaN, 0.001, 1000.));
-		list.add(new Parameter("LAI (MinLAI and MaxLAI)", true, Double.NaN, 0., 20.));
-		list.add(new Parameter("DirectRunoff", true, Double.NaN, 0., 100.));
-		list.add(new Parameter("LitterCap", true, Double.NaN, 0., 1000.));
-		list.add(new Parameter("DegreeDay", true, Double.NaN, 0., 20.));
+		list.add(new Parameter("land_use_fraction", p -> p.landUseFraction, always, 0., 1.));
+		list.add(new Parameter("land_use.icept_cap_per_lai", p -> p.landUseParameters.layerThickness, SensitivityRun::canopy, 0., 10.));
+		list.add(new Parameter("land_use.icept_drain_max", p -> p.landUseParameters.maxDrainageRate, SensitivityRun::canopy, 0., 1000.));
+		list.add(new Parameter("land_use.icept_drain_b", p -> p.landUseParameters.drainageCoefficientB, SensitivityRun::canopy, 0., 100.));
+		list.add(new Parameter("init_litter", p -> p.initialLitter, always, 0., 1000.));
+		list.add(new Parameter("land_use.litter_reduction", p -> p.landUseParameters.litterReductionFactor,
+				p -> p.landUseParameters.litterCapacity > 0., 0.001, 1000.));
+		list.add(new Parameter(LAI, p -> p.landUseParameters.maximumLai(), always, 0., 20.));
+		list.add(new Parameter("land_use.direct_runoff", p -> p.landUseParameters.directRunoffFactor, always, 0., 100.));
+		list.add(new Parameter("land_use.litter_cap", p -> p.landUseParameters.litterCapacity, always, 0., 1000.));
+		list.add(new Parameter("land_use.degree_day", p -> p.landUseParameters.degreeDay, always, 0., 20.));
 		// Penman-Monteith
-		list.add(new Parameter("Albedo", false, pm.albedo, 0., 1.));
-		list.add(new Parameter("Surface emissivity", false, pm.surfaceEmissivity, 0.5, 1.));
-		list.add(new Parameter("Vegetation height", false, pm.vegetationHeight, 0.001, 100.));
-		list.add(new Parameter("Measurement height", false, pm.measurementHeight, 0.1, 500.));
-		list.add(new Parameter("Elevation", false, 0., -500., 9000.));
-		list.add(new Parameter("Soil surface conductance", false, pm.soilSurfaceConductance, 0., 50.));
-		list.add(new Parameter("G1", false, pm.maxConductanceG1, 0., 1e3));
-		list.add(new Parameter("G2", false, pm.kdownShapeG2, 0., 1e5));
-		list.add(new Parameter("G3", false, pm.humiditySlopeG3, 0., 1e3));
-		list.add(new Parameter("G4", false, pm.humidityThresholdG4, 0., 1e3));
-		list.add(new Parameter("G5", false, pm.optimumTemperatureG5, -50., 50.));
-		list.add(new Parameter("G6", false, pm.soilMoistureShapeG6, 0., 1e3));
-		list.add(new Parameter("TH", false, pm.upperTemperatureTH, -50., 70.));
-		list.add(new Parameter("TL", false, pm.lowerTemperatureTL, -50., 70.));
-		list.add(new Parameter("Kmax", false, pm.maxKdown, 1., 2000.));
+		list.add(new Parameter("land_use.albedo", p -> p.landUseParameters.albedo, pmOnly, 0., 1.));
+		list.add(new Parameter("land_use.emissivity", p -> p.landUseParameters.emissivity, pmOnly, 0.5, 1.));
+		list.add(new Parameter("land_use.veg_height", p -> p.landUseParameters.vegetationHeight, pmOnly, 0.001, 100.));
+		list.add(new Parameter("measurement_height", p -> p.measurementHeight, pmOnly, 0.1, 500.));
+		list.add(new Parameter("elevation", p -> p.elevation, pmOnly, -500., 9000.));
+		list.add(new Parameter("pm.G1", p -> p.penmanMonteith().maxConductanceG1, pmCanopy, 0., 1e3));
+		list.add(new Parameter("pm.G2", p -> p.penmanMonteith().kdownShapeG2, pmCanopy, 0., 1e5));
+		list.add(new Parameter("pm.G3", p -> p.penmanMonteith().humiditySlopeG3, pmCanopy, 0., 1e3));
+		list.add(new Parameter("pm.G4", p -> p.penmanMonteith().humidityThresholdG4, pmCanopy, 0., 1e3));
+		list.add(new Parameter("pm.G5", p -> p.penmanMonteith().optimumTemperatureG5, pmCanopy, -50., 50.));
+		list.add(new Parameter("pm.G6", p -> p.penmanMonteith().soilMoistureShapeG6, pmCanopy, 0., 1e3));
+		list.add(new Parameter("pm.TH", p -> p.penmanMonteith().upperTemperatureTH, pmCanopy, -50., 70.));
+		list.add(new Parameter("pm.TL", p -> p.penmanMonteith().lowerTemperatureTL, pmCanopy, -50., 70.));
+		list.add(new Parameter("pm.Kmax", p -> p.penmanMonteith().maxKdown, pmCanopy, 1., 2000.));
 		return list;
 	}
 
@@ -101,18 +117,17 @@ public class SensitivityRun
 	{
 		if (args.length != 1)
 		{
-			System.err.println("Usage: java thud.simpel.SensitivityRun <input directory>");
+			System.err.println("Usage: java thud.simpel.SensitivityRun <run.txt, or the folder that contains it>");
 			System.exit(1);
 		}
-		Path input = Paths.get(args[0]);
+		Path runFile = runFile(Paths.get(args[0]));
 		LocalDateTime start = LocalDateTime.now();
 
-		Map<String, String> soil = readSoil(input);
-		String landUse = soil.get("Land use");
-		System.out.println("One-at-a-time sensitivity of " + input + " (land use " + landUse + ", ET method "
-				+ soil.getOrDefault("ET method", "HAUDE") + "), five levels per parameter");
+		ModelParameters parameters = ModelParameters.read(runFile);
+		System.out.println("One-at-a-time sensitivity of " + runFile + " (soil " + parameters.soilName + ", land use "
+				+ parameters.landUse + ", ET method " + parameters.etMethod + "), five levels per parameter");
 
-		Map<String, Double> base = run(input, null, Double.NaN, landUse);
+		Map<String, Double> base = run(runFile, null, Double.NaN, parameters);
 		double days = base.get("days");
 		double meanEtp = base.get("ETP_Input") / days;
 		System.out.println(String.format(Locale.ROOT, "Base run: %.0f days, mean ETP_Input %.2f mm/day, mean ETP_dry %.2f mm/day, "
@@ -134,8 +149,13 @@ public class SensitivityRun
 		Map<String, Double> largestChange = new LinkedHashMap<String, Double>();
 		for (Parameter parameter : parameters())
 		{
-			double defaultValue = baseValue(parameter, soil, input, landUse);
-			double[] bounds = parameterBounds(parameter, soil, input, landUse);
+			if (!parameter.used.test(parameters))
+			{
+				System.out.println("Skipped " + parameter.name + " (no effect in this run)");
+				continue;
+			}
+			double defaultValue = parameter.base.applyAsDouble(parameters);
+			double[] bounds = parameterBounds(parameter, parameters);
 			if (defaultValue < bounds[0] || defaultValue > bounds[1])
 			{
 				throw new IllegalArgumentException(parameter.name + " default value " + defaultValue
@@ -145,9 +165,8 @@ public class SensitivityRun
 			for (int i = 0; i < values.length; i++)
 			{
 				double value = values[i];
-				Map<String, Double> result = run(input, parameter, value, landUse);
-				String note = result.containsKey("note")
-						? "Init-Value Soil % lowered to the new field capacity" : "";
+				Map<String, Double> result = run(runFile, parameter, value, parameters);
+				String note = notes(parameter, value, parameters);
 				appendRow(csv, parameter.name, LEVELS[i], value, note, result, base);
 				checkEtp(parameter.name + " " + LEVELS[i], result.get("ETP_Input") / days);
 				double change = 0.;
@@ -160,7 +179,7 @@ public class SensitivityRun
 			}
 		}
 
-		Path outputDirectory = SimpelModel.outputDirectory(input, start);
+		Path outputDirectory = SimpelModel.outputDirectory(runFile.toAbsolutePath().getParent(), start);
 		Path output = outputDirectory.resolve("sensitivity_oat.csv");
 		Files.createDirectories(output.getParent());
 		Files.write(output, csv.toString().getBytes(StandardCharsets.UTF_8));
@@ -189,86 +208,116 @@ public class SensitivityRun
 		}
 	}
 
-	static double baseValue(Parameter parameter, Map<String, String> soil, Path input, String landUse) throws IOException
-	{
-		if (parameter.landUseColumn)
-		{
-			Map<String, String> row = landUseRow(input, landUse);
-			String column = parameter.name.startsWith("LAI") ? "MaxLAI" : parameter.name;
-			return Double.parseDouble(row.get(column));
-		}
-		if (parameter.name.equals("Root Depth"))
-		{
-			String rootDepth = landUseRow(input, landUse).getOrDefault("RootDepth", "-");
-			if (!rootDepth.equals("-")) return Double.parseDouble(rootDepth);
-		}
-		String value = soil.get(parameter.name);
-		return value == null ? parameter.defaultValue : Double.parseDouble(value);
-	}
-
-	static double[] parameterBounds(Parameter parameter, Map<String, String> soil, Path input, String landUse)
-			throws IOException
+	static double[] parameterBounds(Parameter parameter, ModelParameters p)
 	{
 		double min = parameter.min;
 		double max = parameter.max;
-		if (parameter.name.equals("Field Capacity %"))
+		// start_of_reduction is only checked against the other soil values where it is used (not with PM)
+		double startOfReduction = pm(p) ? Double.NaN : p.startOfReductionPercent;
+		if (parameter.name.equals("soil.field_capacity"))
 		{
-			min = Math.max(min, Math.nextUp(Double.parseDouble(soil.get("Permanent Wilting Point %"))));
-			String startOfReduction = soil.get("Start of Reduction %");
-			if (startOfReduction != null) min = Math.max(min, Double.parseDouble(startOfReduction));
+			min = Math.max(min, Math.nextUp(p.wiltingPointPercent));
+			if (!Double.isNaN(startOfReduction)) min = Math.max(min, startOfReduction);
 		}
-		else if (parameter.name.equals("Permanent Wilting Point %"))
+		else if (parameter.name.equals("soil.wilting_point"))
 		{
-			max = Math.min(max, Math.nextDown(Double.parseDouble(soil.get("Field Capacity %"))));
-			String startOfReduction = soil.get("Start of Reduction %");
-			if (startOfReduction != null)
+			max = Math.min(max, Math.nextDown(p.fieldCapacityPercent));
+			if (!Double.isNaN(startOfReduction)) max = Math.min(max, Math.nextDown(startOfReduction));
+		}
+		else if (parameter.name.equals("soil.start_of_reduction"))
+		{
+			min = Math.max(min, Math.nextUp(p.wiltingPointPercent));
+			max = Math.min(max, p.fieldCapacityPercent);
+		}
+		else if (parameter.name.equals("init_soil"))
+		{
+			max = Math.min(max, p.fieldCapacityPercent);
+		}
+		else if (parameter.name.equals("measurement_height"))
+		{
+			min = Math.max(min, Math.nextUp(0.67 * p.landUseParameters.vegetationHeight));
+		}
+		else if (parameter.name.equals("land_use.veg_height"))
+		{
+			max = Math.min(max, Math.nextDown(p.measurementHeight / 0.67));
+		}
+		else if (parameter.name.startsWith("pm."))
+		{
+			PenmanMonteithEvaporation pm = p.penmanMonteith();
+			if (parameter.name.equals("pm.G5"))
 			{
-				max = Math.min(max, Math.nextDown(Double.parseDouble(startOfReduction)));
+				min = Math.max(min, Math.nextUp(pm.lowerTemperatureTL));
+				max = Math.min(max, Math.nextDown(pm.upperTemperatureTH));
 			}
-		}
-		else if (parameter.name.equals("Init-Value Soil %"))
-		{
-			max = Math.min(max, Double.parseDouble(soil.get("Field Capacity %")));
-		}
-		else if (parameter.name.equals("Measurement height"))
-		{
-			double vegetationHeight = Double.parseDouble(soil.getOrDefault("Vegetation height", "0.12"));
-			min = Math.max(min, Math.nextUp(0.67 * vegetationHeight));
-		}
-		else if (parameter.name.equals("Vegetation height"))
-		{
-			double measurementHeight = Double.parseDouble(soil.getOrDefault("Measurement height", "2.0"));
-			max = Math.min(max, Math.nextDown(measurementHeight / 0.67));
-		}
-		else if (parameter.name.equals("G5"))
-		{
-			double lowerTemperature = Double.parseDouble(soil.getOrDefault("TL", "0."));
-			double upperTemperature = Double.parseDouble(soil.getOrDefault("TH", "40."));
-			min = Math.max(min, Math.nextUp(lowerTemperature));
-			max = Math.min(max, Math.nextDown(upperTemperature));
-		}
-		else if (parameter.name.equals("TH"))
-		{
-			double lowerTemperature = Double.parseDouble(soil.getOrDefault("TL", "0."));
-			double optimumTemperature = Double.parseDouble(soil.getOrDefault("G5", "11.0764"));
-			min = Math.max(min, Math.nextUp(Math.max(lowerTemperature, optimumTemperature)));
-		}
-		else if (parameter.name.equals("TL"))
-		{
-			double upperTemperature = Double.parseDouble(soil.getOrDefault("TH", "40."));
-			double optimumTemperature = Double.parseDouble(soil.getOrDefault("G5", "11.0764"));
-			max = Math.min(max, Math.nextDown(Math.min(upperTemperature, optimumTemperature)));
+			else if (parameter.name.equals("pm.TH"))
+			{
+				min = Math.max(min, Math.nextUp(Math.max(pm.lowerTemperatureTL, pm.optimumTemperatureG5)));
+			}
+			else if (parameter.name.equals("pm.TL"))
+			{
+				max = Math.min(max, Math.nextDown(Math.min(pm.upperTemperatureTH, pm.optimumTemperatureG5)));
+			}
 		}
 		return new double[] { min, max };
 	}
 
-	/** Runs the model on a copy of the input with one parameter changed (none for the base run) and sums the outputs. */
-	static Map<String, Double> run(Path input, Parameter parameter, double value, String landUse) throws IOException
+	/** The overrides of one test run: the parameter, plus the adjustments that keep the inputs consistent. */
+	static Map<String, String> overrides(Parameter parameter, double value, ModelParameters p)
+	{
+		Map<String, String> overrides = new LinkedHashMap<String, String>();
+		if (parameter.name.equals(LAI))
+		{
+			overrides.put("land_use.min_lai", String.valueOf(value));
+			overrides.put("land_use.max_lai", String.valueOf(value));
+		}
+		else
+		{
+			overrides.put(parameter.name, String.valueOf(value));
+		}
+		// the initial water content must not exceed field capacity
+		if (parameter.name.equals("soil.field_capacity") && p.initialSoilPercent > value)
+		{
+			overrides.put("init_soil", String.valueOf(value));
+		}
+		// a litter layer needs a drying factor
+		if (parameter.name.equals("land_use.litter_cap") && value > 0. && p.landUseParameters.litterCapacity == 0.)
+		{
+			overrides.put("land_use.litter_reduction", String.valueOf(DEFAULT_LITTER_REDUCTION));
+		}
+		return overrides;
+	}
+
+	static String notes(Parameter parameter, double value, ModelParameters p)
+	{
+		List<String> notes = new ArrayList<String>();
+		for (Map.Entry<String, String> entry : overrides(parameter, value, p).entrySet())
+		{
+			if (!entry.getKey().equals(parameter.name) && !parameter.name.equals(LAI))
+			{
+				notes.add(entry.getKey() + " set to " + entry.getValue());
+			}
+		}
+		return String.join("; ", notes);
+	}
+
+	static Path runFile(Path path)
+	{
+		return Files.isDirectory(path) ? path.resolve(ModelParameters.FILE_NAME) : path;
+	}
+
+	/** Runs the model with run.txt plus the overrides of one parameter value (none for the base run) and sums the outputs. */
+	static Map<String, Double> run(Path runFile, Parameter parameter, double value, ModelParameters p) throws IOException
 	{
 		Path dir = Files.createTempDirectory("simpel-sensitivity");
 		try
 		{
-			return runInTemporaryDirectory(input, parameter, value, landUse, dir);
+			Map<String, String> changes = new LinkedHashMap<String, String>();
+			// absolute paths, so that the copy of run.txt finds the inputs
+			changes.put(ModelParameters.FORCING, p.forcingFile.toAbsolutePath().toString());
+			changes.put(ModelParameters.PARAMETERS, p.parametersDirectory.toAbsolutePath().toString());
+			if (parameter != null) changes.putAll(overrides(parameter, value, p));
+			writeRunFile(runFile, dir.resolve(ModelParameters.FILE_NAME), changes);
+			return runInTemporaryDirectory(dir);
 		}
 		finally
 		{
@@ -282,42 +331,33 @@ public class SensitivityRun
 		}
 	}
 
-	private static Map<String, Double> runInTemporaryDirectory(Path input, Parameter parameter, double value,
-			String landUse, Path dir) throws IOException
+	/** Copies run.txt and sets keys: the line of a key is replaced, a key that is not there is added. */
+	static void writeRunFile(Path from, Path to, Map<String, String> changes) throws IOException
 	{
-		try (Stream<Path> files = Files.list(input))
+		Map<String, String> remaining = new LinkedHashMap<String, String>(changes);
+		List<String> lines = new ArrayList<String>();
+		for (String line : Files.readAllLines(from, StandardCharsets.UTF_8))
 		{
-			for (Path file : (Iterable<Path>) files::iterator)
+			String content = line.contains("#") ? line.substring(0, line.indexOf('#')) : line;
+			int equals = content.indexOf('=');
+			String key = equals > 0 ? content.substring(0, equals).trim() : null;
+			if (key != null && remaining.containsKey(key))
 			{
-				if (file.getFileName().toString().endsWith(".txt")) Files.copy(file, dir.resolve(file.getFileName()));
+				line = key + " = " + remaining.remove(key) + "   # sensitivity run";
 			}
+			lines.add(line);
 		}
-		boolean initLowered = false;
-		if (parameter != null)
+		for (Map.Entry<String, String> entry : remaining.entrySet())
 		{
-			if (parameter.landUseColumn || (parameter.name.equals("Root Depth")
-					&& !landUseRow(dir, landUse).getOrDefault("RootDepth", "-").equals("-")))
-			{
-				setLandUseValue(dir, landUse, parameter, value);
-			}
-			else
-			{
-				setSoilValue(dir, parameter.name, value);
-				if (parameter.name.equals("Field Capacity %"))
-				{
-					// the initial water content must not exceed field capacity
-					double init = Double.parseDouble(readSoil(dir).get("Init-Value Soil %"));
-					if (init > value)
-					{
-						setSoilValue(dir, "Init-Value Soil %", value);
-						initLowered = true;
-					}
-				}
-			}
+			lines.add(entry.getKey() + " = " + entry.getValue() + "   # sensitivity run");
 		}
+		Files.write(to, lines, StandardCharsets.UTF_8);
+	}
 
+	private static Map<String, Double> runInTemporaryDirectory(Path dir) throws IOException
+	{
 		SimpelModel model = new SimpelModel();
-		model.setDirectory(dir.toString());
+		model.setRunFile(dir.toString());
 		PrintStream console = System.out;
 		System.setOut(new PrintStream(OutputStream.nullOutputStream()));
 		try
@@ -355,7 +395,6 @@ public class SensitivityRun
 		}
 		sums.put(FINAL_STORAGE, Double.parseDouble(last[header.indexOf(FINAL_STORAGE)]));
 		sums.put("days", (double) days.size());
-		if (initLowered) sums.put("note", 1.);
 		return sums;
 	}
 
@@ -375,86 +414,5 @@ public class SensitivityRun
 	{
 		if (base == 0.) return value == 0. ? 0. : Double.NaN;
 		return 100. * (value - base) / Math.abs(base);
-	}
-
-	static Map<String, String> readSoil(Path dir) throws IOException
-	{
-		Map<String, String> values = new LinkedHashMap<String, String>();
-		for (String line : Files.readAllLines(dir.resolve("Soil_physics.txt"), StandardCharsets.UTF_8))
-		{
-			String trimmed = line.trim();
-			if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
-			String[] fields = trimmed.split(";");
-			if (fields.length >= 2) values.put(fields[0].trim(), fields[1].trim());
-		}
-		return values;
-	}
-
-	static void setSoilValue(Path dir, String key, double value) throws IOException
-	{
-		Path file = dir.resolve("Soil_physics.txt");
-		List<String> lines = new ArrayList<String>();
-		boolean found = false;
-		for (String line : Files.readAllLines(file, StandardCharsets.UTF_8))
-		{
-			if (line.trim().startsWith(key + ";"))
-			{
-				line = key + ";" + value + ";sensitivity run";
-				found = true;
-			}
-			lines.add(line);
-		}
-		if (!found) lines.add(key + ";" + value + ";sensitivity run");
-		Files.write(file, lines, StandardCharsets.UTF_8);
-	}
-
-	static Map<String, String> landUseRow(Path dir, String landUse) throws IOException
-	{
-		String[] header = null;
-		for (String line : Files.readAllLines(dir.resolve(LandUse.FILE_NAME), StandardCharsets.UTF_8))
-		{
-			String trimmed = line.trim();
-			if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
-			String[] fields = trimmed.split("\\s+");
-			if (header == null)
-			{
-				header = fields;
-				continue;
-			}
-			if (fields[0].equals(landUse))
-			{
-				Map<String, String> row = new LinkedHashMap<String, String>();
-				for (int i = 1; i < header.length; i++) row.put(header[i], fields[i]);
-				return row;
-			}
-		}
-		throw new IllegalArgumentException("land use " + landUse + " not found");
-	}
-
-	/** Changes one column of the land-use row; this land use uses one shared value for both LAI limits. */
-	static void setLandUseValue(Path dir, String landUse, Parameter parameter, double value) throws IOException
-	{
-		Path file = dir.resolve(LandUse.FILE_NAME);
-		Map<String, String> row = landUseRow(dir, landUse);
-		if (parameter.name.startsWith("LAI"))
-		{
-			row.put("MinLAI", String.valueOf(value));
-			row.put("MaxLAI", String.valueOf(value));
-		}
-		else
-		{
-			row.put(parameter.name.equals("Root Depth") ? "RootDepth" : parameter.name, String.valueOf(value));
-		}
-		List<String> lines = new ArrayList<String>();
-		for (String line : Files.readAllLines(file, StandardCharsets.UTF_8))
-		{
-			String trimmed = line.trim();
-			if (!trimmed.startsWith("#") && trimmed.split("\\s+")[0].equals(landUse))
-			{
-				line = landUse + " " + String.join(" ", row.values());
-			}
-			lines.add(line);
-		}
-		Files.write(file, lines, StandardCharsets.UTF_8);
 	}
 }

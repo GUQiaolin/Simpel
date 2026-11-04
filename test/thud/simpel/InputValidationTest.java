@@ -5,76 +5,129 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.UnaryOperator;
+import java.util.stream.Stream;
 
 /**
- * Checks that bad input stops the run with a clear message instead of producing NaN or using a wrong value.
- * Each case copies the daily example, breaks one thing and expects an IllegalArgumentException whose message
- * contains a given text.
+ * Checks that bad input stops the run with a clear message instead of producing NaN or using a wrong value,
+ * and that the run.txt overrides, the land-use components and the ET methods work. Each case copies an example
+ * run (run.txt, the parameters folder and the forcing) to a temporary folder, changes one thing and expects
+ * an IllegalArgumentException whose message contains a given text, or a run that finishes.
  */
 public class InputValidationTest
 {
 	static int failures = 0;
 
+	static final Path DAILY = Paths.get("runs", "daily_haude");
+	static final Path HOURLY_PM = Paths.get("runs", "hourly_pm");
+
 	public static void main(String[] args) throws IOException
 	{
-		Path example = Paths.get("example");
+		// run.txt
+		expectRunError(DAILY, "land_use.root_depth = 0", "must be above 0 cm");
+		expectRunError(DAILY, "land_use_fraction = 1.5", "outside 0.0 to 1.0", "land_use_fraction");
+		expectRunError(DAILY, "soil.wilting_point = 30", "must be below field_capacity");
+		expectRunError(DAILY, "soil.start_of_reduction = 12", "must be above the wilting point");
+		expectRunError(DAILY, "init_soil = 30", "must be at most the field capacity", "init_soil");
+		expectRunError(DAILY, "soil.infiltration_fraction = 1.5", "outside 0.0 to 1.0");
+		expectRunError(DAILY, "et_methd = PM", "did you mean 'et_method'");
+		expectRunError(DAILY, "soil.feld_capacity = 30", "did you mean 'field_capacity'");
+		expectRunError(DAILY, "soils.field_capacity = 30", "unknown table 'soils'");
+		expectRunError(DAILY, "pm.G1 = 10", "only used by et_method = PM");
+		expectRunError(HOURLY_PM, "haude.Jan = 0.2", "only used by et_method = HAUDE");
+		expectRunError(DAILY, "land_use = meadow", "not in land_use.txt", "land_use");
+		expectRunError(DAILY, "soil = clay", "not in soil.txt", "soil");
+		expectRunError(DAILY, "hemisphere = South", "must be N or S", "hemisphere");
+		expectRunError(DAILY, "init_litter = 0", "twice");
+		expectRunError(DAILY, "Root Depth;100;old line", "should be 'key = value'");
+		expectRunError(DAILY, "et_method = ET0", "needs an ET0 column", "et_method");
+		expectOldLayoutError();
 
-		expectSoilError(example, "Root Depth;100", "Root Depth;0", "must be above 0 cm");
-		expectSoilError(example, "Land Use Fraction;0.75", "Land Use Fraction;1.5", "outside 0.0 to 1.0");
-		expectSoilError(example, "Permanent Wilting Point %;12", "Permanent Wilting Point %;30", "must be below");
-		expectSoilError(example, "Start of Reduction %;20", "Start of Reduction %;12", "must be above the wilting point");
-		expectSoilError(example, "Init-Value Soil %;20", "Init-Value Soil %;30", "must be at most 'Field Capacity %'");
-		expectSoilAppendError(example, "albedo;0.2;typo of Albedo", "did you mean 'Albedo'");
-		expectSoilAppendError(example, "Infiltration fraction;1.5;too large", "outside 0.0 to 1.0");
-		expectSoilAppendError(example, "Root Depth;50;duplicate", "twice");
-		expectSoilAppendError(example, "Minimum LAI;1;old key", "moved to Land_Use_Parameters.txt");
-		expectSoilAppendError(example, "OHM a1;0.32;old key", "storage heat term (OHM) was removed");
-		expectSoilError(example, "Land Use Fraction;0.75", "Vegetation Fraction;0.75", "renamed to 'Land Use Fraction'");
-		expectSoilError(example, "Hemisphere;N", "Hemisphere;South", "must be N or S");
-		expectSoilError(example, "Land use;grassland", "Land use;meadow", "not in Land_Use_Parameters.txt");
-		expectTableError(example, "grassland     1.00    2.00", "grassland     2.50    2.00", "MinLAI <= MaxLAI");
-		expectTableError(example, "urban         0.10    0.50    5.00       50            0.00       1 ",
-				"urban         0.10    0.50    5.00       50            0.00       0 ", "Root depth must be above 0", "urban");
-		expectRuns(example, "urban");
-		expectRunsWithExtraLandUse(example, "sealed        0.0     0.0     5.00       100           0.00       1          -             -           -                -", "sealed");
+		// land_use.txt: components decide what is needed
+		expectRunError(DAILY, "land_use.min_lai = 2.5", "min_lai <= max_lai");
+		expectRunError(DAILY, "land_use.litter_cap = 1", "litter_reduction must be given");
+		expectRunError(HOURLY_PM, "land_use = grassland", "albedo must be given", "land_use");
+		Path noPmRow = copyRun(HOURLY_PM);
+		appendLine(noPmRow.resolve("parameters/land_use.txt"),
+				"pasture 1.0 3.0 - - - - 100 3.0 15 0 - 0.35 3.7 2.88 0.2 0.98 0.3");
+		setRunValue(noPmRow, "land_use = pasture", "land_use");
+		expectError(noPmRow, "not in pm.txt", "PM land use with leaves but no pm.txt row");
+		expectRuns(DAILY, "land_use = urban", "land_use", "urban (1 cm root depth)");
 
-		expectForcingError(example, line -> line.startsWith("05.01.1995") ? line.replace("90.1", "140") : line,
+		// a land use without canopy and litter: the interception values in the row are ignored with a note
+		Path sealed = copyRun(DAILY);
+		appendLine(sealed.resolve("parameters/land_use.txt"),
+				"sealed 0.0 0.0 - - - - 1 5.00 100 0.00 - 0.35 3.7 2.88 - - -");
+		appendLine(sealed.resolve("parameters/haude.txt"),
+				"sealed 0.10 0.11 0.11 0.15 0.15 0.14 0.13 0.13 0.12 0.11 0.10 0.10");
+		setRunValue(sealed, "land_use = sealed", "land_use");
+		expectRunsIn(sealed, "sealed land use");
+		expectLogContains(sealed, "icept_cap_per_lai, icept_drain_b, icept_drain_max of land use 'sealed' ignored: max_lai = 0");
+
+		// overrides change the result and are written to the log; run.txt is copied to the output
+		Path override = copyRun(DAILY);
+		appendLine(override.resolve("run.txt"), "soil.field_capacity = 30");
+		expectRunsIn(override, "override of field_capacity");
+		expectLogContains(override, "Override from run.txt: soil.field_capacity = 30");
+		Path base = copyRun(DAILY);
+		expectRunsIn(base, "daily example");
+		if (columnSum(override, "Storage") == columnSum(base, "Storage")) fail("soil.field_capacity override had no effect");
+		if (!Files.isRegularFile(outputDirectory(base).resolve(ModelParameters.FILE_NAME))) fail("run.txt not copied to the output");
+
+		// default soil (luvisol) and default initial state (field capacity)
+		Path luvisol = copyRun(DAILY);
+		replaceInFile(luvisol.resolve("run.txt"), line -> line.startsWith("soil ") || line.startsWith("init_soil") ? null : line);
+		expectRunsIn(luvisol, "default soil");
+		expectLogContains(luvisol, "Soil: luvisol");
+		expectLogContains(luvisol, "init_soil not given, the soil starts at field capacity (36.0 vol-%)");
+
+		// forcing
+		expectForcingError(DAILY, line -> line.startsWith("05.01.1995") ? line.replace("90.1", "140") : line,
 				"outside the plausible range");
-		expectForcingError(example, line -> line.startsWith("05.01.1995") ? line.replace("90.1", "NA") : line,
+		expectForcingError(DAILY, line -> line.startsWith("05.01.1995") ? line.replace("90.1", "NA") : line,
 				"missing value");
-		expectForcingError(example, line -> line.startsWith("05.01.1995") ? line.replace("90.1", "abc") : line,
+		expectForcingError(DAILY, line -> line.startsWith("05.01.1995") ? line.replace("90.1", "abc") : line,
 				"is not a number");
-		expectForcingError(example, line -> line.startsWith("06.01.1995") ? null : line, "not evenly spaced");
+		expectForcingError(DAILY, line -> line.startsWith("06.01.1995") ? null : line, "not evenly spaced");
+		// ISO dates give the same result as dd.mm.yyyy
+		Path iso = copyRun(DAILY);
+		replaceInFile(iso.resolve("forcing.txt"), line -> line.matches("\\d\\d\\.\\d\\d\\.\\d{4}\\s.*")
+				? line.substring(6, 10) + "-" + line.substring(3, 5) + "-" + line.substring(0, 2) + line.substring(10) : line);
+		expectRunsIn(iso, "ISO dates");
+		if (columnSum(iso, "ETaTotal") != columnSum(base, "ETaTotal")) fail("ISO dates changed the result");
 
-		// PM run whose forcing also has an ET0 column: ET0 is ignored instead of stopping the run
-		Path pmWithEt0 = copyExample(Paths.get("example_hourly"));
-		replaceInFile(pmWithEt0.resolve("Global_Input.txt"), line -> line.trim().isEmpty() ? line : line + (line.startsWith("Date") ? "\tET0" : "\t0.1"));
+		// ET methods
+		Path pmWithEt0 = copyRun(HOURLY_PM);
+		addEt0Column(pmWithEt0, "0.1");
 		expectRunsIn(pmWithEt0, "PM with an ET0 column");
-		// ET0 from file does not need Haude_Coefficients.txt
-		Path et0WithoutHaude = copyExample(example);
-		replaceInFile(et0WithoutHaude.resolve("Global_Input.txt"), line -> line.trim().isEmpty() ? line : line + (line.startsWith("Date") ? "\tET0" : "\t1.0"));
-		Files.delete(et0WithoutHaude.resolve("Haude_Coefficients.txt"));
-		expectRunsIn(et0WithoutHaude, "ET0 from file without Haude_Coefficients.txt");
+		Path et0 = copyRun(DAILY);
+		addEt0Column(et0, "1.0");
+		setRunValue(et0, "et_method = ET0", "et_method");
+		Files.delete(et0.resolve("parameters/haude.txt"));
+		expectRunsIn(et0, "ET0 from the forcing without haude.txt");
+		double steps = Files.readAllLines(outputDirectory(et0).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8).stream()
+				.skip(1).filter(line -> !line.trim().isEmpty()).count();
+		if (Math.abs(columnSum(et0, "ETP_Input") - steps) > 1e-9) fail("ET0: expected ETP_Input = ET0 column (1 mm), got sum "
+				+ columnSum(et0, "ETP_Input") + " over " + steps + " steps");
 
-		// PM, bare land use (MaxLAI 0): the soil now dries by evaporation from the bare-soil gap, not only by seepage
-		Path bare = copyExample(Paths.get("example_hourly"));
-		Files.write(bare.resolve("Land_Use_Parameters.txt"), ("bare_soil 0.0 0.0 3.00 0 0.00 - - - - -\n").getBytes(StandardCharsets.UTF_8),
-				java.nio.file.StandardOpenOption.APPEND);
-		replaceInFile(bare.resolve("Soil_physics.txt"), line -> line.startsWith("Land use;") ? "Land use;bare_soil;" : line);
+		// PM, bare land use (max_lai 0, no pm.txt row): the soil dries by evaporation from the bare-soil gap
+		Path bare = copyRun(HOURLY_PM);
+		appendLine(bare.resolve("parameters/land_use.txt"), "bare_soil 0.0 0.0 - - - - 100 3.00 0 0.00 - - - - 0.18 0.98 0.12");
+		setRunValue(bare, "land_use = bare_soil", "land_use");
 		expectRunsIn(bare, "PM on bare soil");
 		double bareEvaporation = columnSum(bare, "ETa");
 		if (!(bareEvaporation > 1.)) fail("PM on bare soil: expected soil evaporation from the gap, got ETa sum " + bareEvaporation);
 
 		// The run log also records an error that stops the run
-		Path broken = copyExample(example);
-		replaceInFile(broken.resolve("Soil_physics.txt"), line -> line.startsWith("Root Depth;100") ? "Root Depth;0;" : line);
+		Path broken = copyRun(DAILY);
+		appendLine(broken.resolve("run.txt"), "land_use.root_depth = 0");
 		expectError(broken, "must be above 0 cm", "log of a failed run");
 		expectLogContains(broken, "Run stopped: java.lang.IllegalArgumentException: Root depth must be above 0 cm");
-		expectLogContains(broken, "Input directory:");
+		expectLogContains(broken, "Run file:");
 
 		if (failures > 0)
 		{
@@ -84,78 +137,60 @@ public class InputValidationTest
 		System.out.println("InputValidationTest OK");
 	}
 
-	static void expectSoilError(Path example, String from, String to, String expected) throws IOException
+	/** Adds (or, with replacedKey, replaces) a line of run.txt and expects an error containing the text. */
+	static void expectRunError(Path run, String line, String expected, String... replacedKey) throws IOException
 	{
-		if (to == null) return;
-		Path dir = copyExample(example);
-		replaceInFile(dir.resolve("Soil_physics.txt"), line -> line.startsWith(from) ? line.replace(from, to) : line);
-		expectError(dir, expected, from + " -> " + to);
+		Path dir = copyRun(run);
+		if (replacedKey.length > 0) setRunValue(dir, line, replacedKey[0]);
+		else appendLine(dir.resolve("run.txt"), line);
+		expectError(dir, expected, "run.txt line '" + line + "'");
 	}
 
-	static void expectTableError(Path example, String from, String to, String expected) throws IOException
+	/** Replaces the line of a key in run.txt (or adds it) and expects a run without NaN. */
+	static void expectRuns(Path run, String line, String key, String description) throws IOException
 	{
-		expectTableError(example, from, to, expected, null);
-	}
-
-	/** Changes Land_Use_Parameters.txt (and optionally the land use of the run) and expects an error. */
-	static void expectTableError(Path example, String from, String to, String expected, String landUse) throws IOException
-	{
-		Path dir = copyExample(example);
-		replaceInFile(dir.resolve("Land_Use_Parameters.txt"), line -> line.startsWith(from) ? line.replace(from, to) : line);
-		if (landUse != null)
+		Path dir = copyRun(run);
+		setRunValue(dir, line, key);
+		expectRunsIn(dir, description);
+		for (String output : Files.readAllLines(outputDirectory(dir).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8))
 		{
-			replaceInFile(dir.resolve("Soil_physics.txt"), line -> line.startsWith("Land use;") ? "Land use;" + landUse + ";" : line);
-		}
-		expectError(dir, expected, from + " -> " + to);
-	}
-
-	/** The run must finish without NaN for this land use (e.g. urban with its 1 cm root depth). */
-	static void expectRuns(Path example, String landUse) throws IOException
-	{
-		Path dir = copyExample(example);
-		replaceInFile(dir.resolve("Soil_physics.txt"), line -> line.startsWith("Land use;") ? "Land use;" + landUse + ";" : line);
-		SimpelModel model = new SimpelModel();
-		model.setDirectory(dir.toString());
-		model.process();
-		for (String line : Files.readAllLines(outputDirectory(dir).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8))
-		{
-			if (line.contains("NaN"))
+			if (output.contains("NaN"))
 			{
-				fail("land use " + landUse + ": NaN in output line " + line.substring(0, Math.min(40, line.length())));
+				fail(description + ": NaN in output");
 				return;
 			}
 		}
 	}
 
-	/** Adds a row to Land_Use_Parameters.txt (and a Haude row copied from urban) and expects a run without NaN. */
-	static void expectRunsWithExtraLandUse(Path example, String row, String landUse) throws IOException
+	static void expectOldLayoutError() throws IOException
 	{
-		Path dir = copyExample(example);
-		Files.write(dir.resolve("Land_Use_Parameters.txt"), (row + "\n").getBytes(StandardCharsets.UTF_8),
-				java.nio.file.StandardOpenOption.APPEND);
-		for (String line : Files.readAllLines(dir.resolve("Haude_Coefficients.txt"), StandardCharsets.UTF_8))
+		Path dir = Files.createTempDirectory("simpel-validation");
+		Files.write(dir.resolve("Soil_physics.txt"), "Field Capacity %;25;\n".getBytes(StandardCharsets.UTF_8));
+		try
 		{
-			if (line.startsWith("urban "))
-			{
-				Files.write(dir.resolve("Haude_Coefficients.txt"), (line.replaceFirst("^urban ", landUse + " ") + "\n")
-						.getBytes(StandardCharsets.UTF_8), java.nio.file.StandardOpenOption.APPEND);
-			}
+			new SimpelModel().setRunFile(dir.toString());
+			fail("old input layout: expected an error");
 		}
-		replaceInFile(dir.resolve("Soil_physics.txt"), line -> line.startsWith("Land use;") ? "Land use;" + landUse + ";" : line);
-		SimpelModel model = new SimpelModel();
-		model.setDirectory(dir.toString());
-		model.process();
-		for (String line : Files.readAllLines(outputDirectory(dir).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8))
+		catch (IllegalArgumentException e)
 		{
-			if (line.contains("NaN"))
-			{
-				fail("land use " + landUse + ": NaN in output");
-				return;
-			}
+			if (!e.getMessage().contains("old input layout")) fail("old input layout: got " + e.getMessage());
 		}
 	}
 
-	/** Sum of one output column. */
+	static void addEt0Column(Path dir, String value) throws IOException
+	{
+		replaceInFile(dir.resolve("forcing.txt"), line -> line.trim().isEmpty() ? line
+				: line + (line.startsWith("Date") ? "\tET0" : "\t" + value));
+	}
+
+	static void expectForcingError(Path run, UnaryOperator<String> change, String expected) throws IOException
+	{
+		Path dir = copyRun(run);
+		replaceInFile(dir.resolve("forcing.txt"), change);
+		expectError(dir, expected, "changed forcing");
+	}
+
+	/** Sum of one output column of the latest run. */
 	static double columnSum(Path dir, String column) throws IOException
 	{
 		List<String> lines = Files.readAllLines(outputDirectory(dir).resolve(SimpelModel.OUTPUT_FILE), StandardCharsets.UTF_8);
@@ -181,7 +216,7 @@ public class InputValidationTest
 
 	static Path outputDirectory(Path dir) throws IOException
 	{
-		try (java.util.stream.Stream<Path> paths = Files.list(dir))
+		try (Stream<Path> paths = Files.list(dir))
 		{
 			return paths.filter(Files::isDirectory)
 					.filter(path -> path.getFileName().toString().matches(SimpelModel.OUTPUT_FOLDER + "_\\d{8}_\\d{6}"))
@@ -190,52 +225,35 @@ public class InputValidationTest
 		}
 	}
 
-	/** The run in this directory must finish without an error. */
-	static void expectRunsIn(Path dir, String description)
+	static SimpelModel model(Path dir)
 	{
 		SimpelModel model = new SimpelModel();
-		model.setDirectory(dir.toString());
+		model.setRunFile(dir.toString());
+		return model;
+	}
+
+	/** The run in this directory must finish without an error. */
+	static void expectRunsIn(Path dir, String description) throws IOException
+	{
 		try
 		{
-			model.process();
-			Path output = outputDirectory(dir);
-			if (!Files.isRegularFile(output.resolve("SIMPEL_log.txt")))
+			model(dir).process();
+			if (!Files.isRegularFile(outputDirectory(dir).resolve("SIMPEL_log.txt")))
 			{
-				fail(description + ": expected SIMPEL_log.txt in " + output);
+				fail(description + ": expected SIMPEL_log.txt in " + outputDirectory(dir));
 			}
 		}
 		catch (RuntimeException e)
 		{
 			fail(description + ": " + e.getMessage());
 		}
-		catch (IOException e)
-		{
-			fail(description + ": " + e.getMessage());
-		}
-	}
-
-	static void expectSoilAppendError(Path example, String extraLine, String expected) throws IOException
-	{
-		Path dir = copyExample(example);
-		Files.write(dir.resolve("Soil_physics.txt"), ("\n" + extraLine + "\n").getBytes(StandardCharsets.UTF_8),
-				java.nio.file.StandardOpenOption.APPEND);
-		expectError(dir, expected, "extra line '" + extraLine + "'");
-	}
-
-	static void expectForcingError(Path example, UnaryOperator<String> change, String expected) throws IOException
-	{
-		Path dir = copyExample(example);
-		replaceInFile(dir.resolve("Global_Input.txt"), change);
-		expectError(dir, expected, "changed forcing");
 	}
 
 	static void expectError(Path dir, String expected, String description)
 	{
-		SimpelModel model = new SimpelModel();
-		model.setDirectory(dir.toString());
 		try
 		{
-			model.process();
+			model(dir).process();
 			fail(description + ": expected an error containing '" + expected + "', but the run finished");
 		}
 		catch (IllegalArgumentException e)
@@ -247,20 +265,48 @@ public class InputValidationTest
 		}
 	}
 
-	static Path copyExample(Path example) throws IOException
+	/**
+	 * Copies an example run to a temporary folder: run.txt (with forcing = forcing.txt and parameters = parameters),
+	 * a copy of its forcing file and of the parameters folder.
+	 */
+	static Path copyRun(Path run) throws IOException
 	{
 		Path dir = Files.createTempDirectory("simpel-validation");
-		try (java.util.stream.Stream<Path> files = Files.list(example))
+		ModelParameters parameters = ModelParameters.read(run.resolve(ModelParameters.FILE_NAME));
+		Files.copy(parameters.forcingFile, dir.resolve("forcing.txt"));
+		Files.createDirectories(dir.resolve("parameters"));
+		try (Stream<Path> files = Files.list(parameters.parametersDirectory))
 		{
 			for (Path file : (Iterable<Path>) files::iterator)
 			{
-				if (file.getFileName().toString().endsWith(".txt"))
-				{
-					Files.copy(file, dir.resolve(file.getFileName()));
-				}
+				if (file.getFileName().toString().endsWith(".txt")) Files.copy(file, dir.resolve("parameters").resolve(file.getFileName()));
 			}
 		}
+		Files.copy(run.resolve(ModelParameters.FILE_NAME), dir.resolve(ModelParameters.FILE_NAME));
+		setRunValue(dir, "forcing = forcing.txt", "forcing");
+		setRunValue(dir, "parameters = parameters", "parameters");
 		return dir;
+	}
+
+	/** Replaces the line of a key in run.txt, or adds the line if the key is not there. */
+	static void setRunValue(Path dir, String line, String key) throws IOException
+	{
+		Path file = dir.resolve(ModelParameters.FILE_NAME);
+		boolean[] found = { false };
+		replaceInFile(file, existing -> {
+			if (existing.matches("\\s*" + java.util.regex.Pattern.quote(key) + "\\s*=.*"))
+			{
+				found[0] = true;
+				return line;
+			}
+			return existing;
+		});
+		if (!found[0]) appendLine(file, line);
+	}
+
+	static void appendLine(Path file, String line) throws IOException
+	{
+		Files.write(file, ("\n" + line + "\n").getBytes(StandardCharsets.UTF_8), StandardOpenOption.APPEND);
 	}
 
 	static void replaceInFile(Path file, UnaryOperator<String> change) throws IOException

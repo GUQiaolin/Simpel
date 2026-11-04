@@ -11,11 +11,11 @@ package thud.simpel;
  *
  * The four dates are days of the year. They default to the values of the original SIMPEL LAI model
  * (121, 135, 305, 319, i.e. 1-15 May and 1-15 November) and can be set per land use in
- * Land_Use_Parameters.txt. The curve is evaluated cyclically, so a season may run across the turn of
+ * land_use.txt. The curve is evaluated cyclically, so a season may run across the turn of
  * the year (e.g. green-up in October and senescence in April).
  *
  * Southern hemisphere: the dates are written as for the northern hemisphere and shifted by half a year
- * with Hemisphere;S in Soil_physics.txt (see seasonalDay), so the same land-use table works for both.
+ * with hemisphere = S in run.txt (see seasonalDay), so the same land-use table works for both.
  *
  * This class is the place where a dynamic phenology (e.g. responding to drought) can replace the
  * fixed curve later.

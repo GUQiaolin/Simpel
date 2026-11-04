@@ -6,7 +6,7 @@ package thud.simpel;
  * section 2.4). The available energy comes straight from the radiation forcing:
  *
  *   available energy  A  = Q*                 (no storage heat, no anthropogenic heat)
- *   net radiation     Q* = QN column of Global_Input.txt if present, otherwise
+ *   net radiation     Q* = QN column of the forcing if present, otherwise
  *                     Q* = (1 - albedo) K_down + emissivity (L_down - sigma T_air^4)
  *   latent heat       QE = (s A + rho cp VPD / ra) / (s + gamma (1 + rs / ra))
  *   surface conductance after Järvi et al. (2011), gsModel 1:
