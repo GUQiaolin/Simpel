@@ -155,13 +155,13 @@ The land uses and their values (the file header has the typical ranges and sourc
 
 | `land_use` (former name) | min/max LAI | root depth | veg. height | albedo / emissivity |
 |---|---|---|---|---|
-| `forest_deciduous` (beech) | 1.0 / 6.0 | 140 cm | 25 m | 0.175 / 0.98 |
+| `forest_deciduous` (beech) | 1.0 / 6.0 | 140 cm | 30 m | 0.175 / 0.98 |
 | `forest_evergreen` (spruce) | 7.0 / 7.0 | 100 cm | 25 m | 0.10 / 0.98 |
-| `crop_maize` (corn) | 0 / 4.0 | 100 cm | 2.0 m | 0.21 / 0.955 |
-| `crop_sugarbeet` (sugar_beet) | 0 / 4.5 | 100 cm | 0.5 m | 0.21 / 0.955 |
-| `crop_winterwheat` (winter_wheat) | 0.5 / 5.5 | 120 cm | 1.0 m | 0.21 / 0.955 |
-| `grassland` | 1.0 / 4.0 | 60 cm | 0.3 m | 0.21 / 0.955 |
-| `grassland_irrigated` (irrigated_grass) | 2.88 / 2.88 | 50 cm | 0.12 m | 0.21 / 0.955 |
+| `crop_corn` (corn) | 0 / 4.0 | 100 cm | 2.0 m | 0.21 / 0.95 |
+| `crop_sugarbeet` (sugar_beet) | 0 / 4.5 | 100 cm | 0.5 m | 0.21 / 0.95 |
+| `crop_winterwheat` (winter_wheat) | 0.5 / 5.5 | 120 cm | 1.0 m | 0.21 / 0.95 |
+| `grassland` | 1.0 / 4.0 | 60 cm | 0.3 m | 0.21 / 0.95 |
+| `grassland_irrigated` (irrigated_grass) | 2.88 / 2.88 | 50 cm | 0.12 m | 0.21 / 0.95 |
 | `urban` | 0.1 / 0.5 | 1 cm | 10 m | 0.22 / 0.92 |
 
 - **LAI** is the one-sided green leaf area index. In winter, `min_lai` stands for the plant area that still
@@ -173,23 +173,23 @@ The land uses and their values (the file header has the typical ranges and sourc
   effective root depth of arable land on loess (about 10–11 dm), grassland about half to two-thirds of it (KA5:
   arable value minus 2 dm, or halved). Norway spruce is a shallow-rooting species (most roots in the upper
   0.5–1 m) and beech roots deeper, so beech has the larger root depth.
-- **Vegetation height** after FAO-56 (table 12) for crops and grass, mature stands for the forests, typical
+- **Vegetation height** after FAO-56 (table 12) for crops and grass, mature stands for the forests (beech 30 m, spruce 25 m), typical
   building height for urban. It is static: crops keep their full height also outside the season.
 - **Albedo and emissivity** are the midpoints of the ranges for evergreen, deciduous and grass/cropland
-  surfaces; urban is the mean of asphalt, concrete and roofs. They are static (no snow, no seasonal change).
+  surfaces (grass/cropland emissivity rounded to 0.95); urban is the mean of asphalt, concrete and roofs. They are static (no snow, no seasonal change).
 - The renamed land uses stop a run that still uses the old name with a message naming the new one.
 - `haude.txt` has rows for all land uses except `grassland_irrigated`; `pm.txt` has conductance parameters
   only for `grassland_irrigated` (Järvi et al. 2011). `PM` with another land use needs a `pm.txt` row.
 - The phenology dates are not yet set (`-`), so all seasonal land uses use the default curve (green-up
-  1–15 May, senescence 1–15 November). This is a rough fit for crops: maize and sugar beet reach full
+  1–15 May, senescence 1–15 November). This is a rough fit for crops: corn and sugar beet reach full
   cover only in July, winter wheat green-up starts in March and it is harvested in July.
 
 **Missing `veg_height`.** It is only used by `PM`, for the aerodynamic resistance (displacement height
 0.67 × h, roughness length 0.123 × h for momentum and a tenth of that for vapour). With `PM`, a land use
 without `veg_height` (`-`) stops the run with "veg_height must be given for land_use '…'"; there is no
 silent default. With `HAUDE` and `ET0` the value is not read and `-` is fine. `measurement_height` must be
-above the displacement height 0.67 × `veg_height`, so the forests (25 m) need a measurement height above
-16.75 m and urban above 6.7 m (the default of 2 m is for grass).
+above the displacement height 0.67 × `veg_height`, so the forests (30 m and 25 m) need a measurement height
+above 20.1 m and 16.75 m and urban above 6.7 m (the default of 2 m is for grass).
 
 ### `pm.txt`: surface conductance (`PM`)
 

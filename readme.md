@@ -189,7 +189,7 @@ The `PM` method runs on daily forcing, but use hourly (or at most 3-hourly) step
   (`run.txt`) or a whitespace table (parameters, forcing).
 * Dates may also be given as ISO 8601 (`2004-01-01`, `2004-01-01T13:00`).
 * `start_of_reduction` is only checked when it is used (`HAUDE`, `ET0`).
-* Land-use table updated: land uses renamed by type (`forest_deciduous`, `forest_evergreen`, `crop_maize`,
+* Land-use table updated: land uses renamed by type (`forest_deciduous`, `forest_evergreen`, `crop_corn`,
   `crop_sugarbeet`, `crop_winterwheat`, `grassland`, `grassland_irrigated`, `urban`; an old name stops the run
   with the new one), LAI, root depth and vegetation height set to typical values, albedo and emissivity for every
   land use, and a table of typical ranges at the top of `land_use.txt` (see `GLOSSARY.md`).

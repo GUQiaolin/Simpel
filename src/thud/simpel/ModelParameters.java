@@ -70,7 +70,7 @@ public class ModelParameters
 	{
 		RENAMED_LAND_USES.put("beech", "forest_deciduous");
 		RENAMED_LAND_USES.put("spruce", "forest_evergreen");
-		RENAMED_LAND_USES.put("corn", "crop_maize");
+		RENAMED_LAND_USES.put("corn", "crop_corn");
 		RENAMED_LAND_USES.put("sugar_beet", "crop_sugarbeet");
 		RENAMED_LAND_USES.put("winter_wheat", "crop_winterwheat");
 		RENAMED_LAND_USES.put("irrigated_grass", "grassland_irrigated");
