@@ -64,6 +64,18 @@ public class ModelParameters
 	static final String HAUDE_TABLE = "haude";
 	static final List<String> TABLES = Arrays.asList(SOIL_TABLE, LAND_USE_TABLE, PM_TABLE, HAUDE_TABLE);
 
+	/** Land uses renamed in land_use.txt, with their new name. */
+	static final Map<String, String> RENAMED_LAND_USES = new LinkedHashMap<String, String>();
+	static
+	{
+		RENAMED_LAND_USES.put("beech", "forest_deciduous");
+		RENAMED_LAND_USES.put("spruce", "forest_evergreen");
+		RENAMED_LAND_USES.put("corn", "crop_maize");
+		RENAMED_LAND_USES.put("sugar_beet", "crop_sugarbeet");
+		RENAMED_LAND_USES.put("winter_wheat", "crop_winterwheat");
+		RENAMED_LAND_USES.put("irrigated_grass", "grassland_irrigated");
+	}
+
 	public final Path runFile;
 	public final Path forcingFile;
 	public final Path parametersDirectory;
@@ -188,6 +200,11 @@ public class ModelParameters
 
 		// land use
 		LookupTable landUseTable = table(LandUse.FILE_NAME, LandUse.COLUMNS);
+		if (!landUseTable.hasRow(landUse) && RENAMED_LAND_USES.containsKey(landUse))
+		{
+			throw new IllegalArgumentException("Land use '" + landUse + "' has been renamed to '" + RENAMED_LAND_USES.get(landUse)
+					+ "'; change land_use in " + FILE_NAME);
+		}
 		applyOverrides(landUseTable, landUse, tableOverrides.get(LAND_USE_TABLE));
 		landUseParameters = new LandUse(landUseTable, landUse, penmanMonteith);
 		notes.addAll(landUseParameters.notes);

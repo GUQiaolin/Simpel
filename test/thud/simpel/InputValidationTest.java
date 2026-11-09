@@ -48,9 +48,14 @@ public class InputValidationTest
 		expectOldLayoutError();
 
 		// land_use.txt: components decide what is needed
-		expectRunError(DAILY, "land_use.min_lai = 2.5", "min_lai <= max_lai");
+		expectRunError(DAILY, "land_use.min_lai = 4.5", "min_lai <= max_lai");
 		expectRunError(DAILY, "land_use.litter_cap = 1", "litter_reduction must be given");
-		expectRunError(HOURLY_PM, "land_use = grassland", "albedo must be given", "land_use");
+		Path noAlbedo = copyRun(HOURLY_PM);
+		appendLine(noAlbedo.resolve("parameters/land_use.txt"),
+				"pasture 1.0 3.0 - - - - 60 3.0 15 0 - 0.35 3.7 2.88 - 0.98 0.3");
+		setRunValue(noAlbedo, "land_use = pasture", "land_use");
+		expectError(noAlbedo, "albedo must be given", "PM land use without albedo");
+		expectRunError(DAILY, "land_use = spruce", "renamed to 'forest_evergreen'", "land_use");
 		Path noPmRow = copyRun(HOURLY_PM);
 		appendLine(noPmRow.resolve("parameters/land_use.txt"),
 				"pasture 1.0 3.0 - - - - 100 3.0 15 0 - 0.35 3.7 2.88 0.2 0.98 0.3");
@@ -266,8 +271,8 @@ public class InputValidationTest
 	}
 
 	/**
-	 * Copies an example run to a temporary folder: run.txt (with forcing = forcing.txt and parameters = parameters),
-	 * a copy of its forcing file and of the parameters folder.
+	 * Copies an example run to a temporary folder: run.txt (with forcing = forcing.txt and parameters = parameters,
+	 * without its land_use.* overrides), a copy of its forcing file and of the parameters folder.
 	 */
 	static Path copyRun(Path run) throws IOException
 	{
@@ -285,6 +290,8 @@ public class InputValidationTest
 		Files.copy(run.resolve(ModelParameters.FILE_NAME), dir.resolve(ModelParameters.FILE_NAME));
 		setRunValue(dir, "forcing = forcing.txt", "forcing");
 		setRunValue(dir, "parameters = parameters", "parameters");
+		// the land-use overrides that keep the example results would also apply to the rows the tests add
+		replaceInFile(dir.resolve(ModelParameters.FILE_NAME), line -> line.trim().startsWith("land_use.") ? null : line);
 		return dir;
 	}
 

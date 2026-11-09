@@ -11,5 +11,5 @@
 #   TH    upper temperature limit                                      degC
 #   TL    lower temperature limit                                      degC
 #   Kmax  maximum Kdown                                                W m-2
-land_use        G1       G2        G3      G4      G5       G6      TH  TL  Kmax
-irrigated_grass 16.4764  566.0923  0.2163  3.3649  11.0764  0.0176  40  0   1200
+land_use            G1       G2        G3      G4      G5       G6      TH  TL  Kmax
+grassland_irrigated 16.4764  566.0923  0.2163  3.3649  11.0764  0.0176  40  0   1200

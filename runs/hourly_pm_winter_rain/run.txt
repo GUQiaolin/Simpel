@@ -7,7 +7,7 @@ parameters = ../../parameters
 
 # what is simulated
 soil      = simpel_example    # row of soil.txt (default luvisol)
-land_use  = irrigated_grass   # row of land_use.txt
+land_use  = grassland_irrigated # row of land_use.txt
 et_method = PM                # HAUDE, PM or ET0 (ET0 column of the forcing)
 
 # site
@@ -20,6 +20,10 @@ measurement_height = 10       # m, height of the wind and temperature measuremen
 init_soil   = 24              # vol-% (default: field capacity)
 init_litter = 0               # mm
 
-# overrides of single table values, e.g.
-# soil.field_capacity = 30
-# pm.G1               = 10
+# overrides of single table values: the values this example was run with before the land-use table
+# was updated (remove them to use the table values of grassland_irrigated)
+land_use.min_lai    = 2
+land_use.max_lai    = 2
+land_use.root_depth = 100
+land_use.albedo     = 0.18
+land_use.emissivity = 0.98

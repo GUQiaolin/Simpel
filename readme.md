@@ -63,12 +63,14 @@ timestamped folder `output_<yyyyMMdd_HHmmss>/` next to `run.txt`. Each run gets 
 Example runs (`runs/`):
 
 * `daily_haude` – daily run with the Haude method (original example, 1995, Central Europe).
-* `hourly_pm` – hourly run with `et_method = PM`, forced with January 2004 of the AU-Preston (Melbourne) tower data from the TARGET repository, averaged to hourly (`hemisphere = S`). That data set has no precipitation, so P is 0 and the run shows a dry-down; the measurement height is the 40 m tower. It uses the land use `irrigated_grass`.
+* `hourly_pm` – hourly run with `et_method = PM`, forced with January 2004 of the AU-Preston (Melbourne) tower data from the TARGET repository, averaged to hourly (`hemisphere = S`). That data set has no precipitation, so P is 0 and the run shows a dry-down; the measurement height is the 40 m tower. It uses the land use `grassland_irrigated`.
 * `hourly_pm_winter` and `hourly_pm_winter_rain` – paired, synthetic Germany-like January scenarios for sensitivity comparisons, with no rain and three rain events respectively.
 * `daily_pm` – the same month as `hourly_pm` aggregated to daily means (for comparison only, see "Penman–Monteith on a daily time step" below).
 
-The example runs use the soil `simpel_example` of the original SIMPEL example, so their results are
-unchanged; leave out `soil` to use the default `luvisol`.
+The example runs use the soil `simpel_example` of the original SIMPEL example and override the land-use values
+they were run with before the land-use table was updated (LAI, root depth, and with `PM` albedo and emissivity),
+so their results are unchanged. Leave out `soil` to use the default `luvisol`, and remove the `land_use.`
+overrides to use the table values.
 
 `./test.sh` compiles everything, runs the unit tests (Penman–Monteith against an independent Python implementation, phenology, single bucket steps, input checks) and checks `daily_haude`, `hourly_pm` and `daily_pm` against `test/reference/`, including the water balance at every step.
 
@@ -187,6 +189,10 @@ The `PM` method runs on daily forcing, but use hourly (or at most 3-hourly) step
   (`run.txt`) or a whitespace table (parameters, forcing).
 * Dates may also be given as ISO 8601 (`2004-01-01`, `2004-01-01T13:00`).
 * `start_of_reduction` is only checked when it is used (`HAUDE`, `ET0`).
+* Land-use table updated: land uses renamed by type (`forest_deciduous`, `forest_evergreen`, `crop_maize`,
+  `crop_sugarbeet`, `crop_winterwheat`, `grassland`, `grassland_irrigated`, `urban`; an old name stops the run
+  with the new one), LAI, root depth and vegetation height set to typical values, albedo and emissivity for every
+  land use, and a table of typical ranges at the top of `land_use.txt` (see `GLOSSARY.md`).
 
 Fixes, with the reason for each:
 
@@ -201,7 +207,7 @@ Fixes, with the reason for each:
   limit this case is rare, so the fix is a safeguard.
 * **Litter evaporation follows the SIMPEL spreadsheet:** MIN(demand; MIN(capacity; content + throughfall) /
   factor). The code divided only the water by the factor, so the litter could evaporate its full capacity
-  in one step. Land uses with litter capacity 0 are unaffected. For beech on the daily example, litter
+  in one step. Land uses with litter capacity 0 are unaffected. For beech (`forest_deciduous`) on the daily example, litter
   evaporation drops from 46.3 to 39.6 mm/yr.
 * **Input/output handling:**
   * An `ET0` column no longer stops a `PM` run; it is ignored with a note.

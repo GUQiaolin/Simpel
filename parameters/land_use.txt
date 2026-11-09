@@ -1,6 +1,30 @@
 # Land-use parameters, one row per land use, including the phenology (LAI over the year) and the surface
 # properties used by the PM method. The land use of a run is chosen with 'land_use = <name>' in run.txt;
 # single values can be overridden there, e.g. land_use.max_lai = 3. To add a land use, add a row.
+#
+# Typical ranges (Central Europe, temperate climate), for orientation when choosing or overriding values.
+# LAI is the one-sided green leaf area index; in winter it stands for the plant area (stems, branches,
+# residues) that still intercepts rain. Root depth is the effective root depth of the soil water store,
+# not the maximum depth of single roots.
+#
+#   land use             min_lai   max_lai   albedo      emissivity  veg_height (m)  root_depth (cm)
+#   forest_deciduous     0.5-1.5   4-7       0.15-0.20   0.97-0.99   20-35           100-200
+#   forest_evergreen     4-8       4-8       0.05-0.15   0.97-0.99   20-35           50-120 (spruce: shallow roots)
+#   crop_maize           0-0.5     3-6       0.16-0.26   0.93-0.98   1.5-3.0         80-170
+#   crop_sugarbeet       0-0.5     3-6       0.16-0.26   0.93-0.98   0.4-0.6         70-120
+#   crop_winterwheat     0.3-1     4-7       0.16-0.26   0.93-0.98   0.8-1.2         100-180
+#   grassland            0.5-1.5   2-6       0.16-0.26   0.93-0.98   0.1-0.5         30-100
+#   grassland_irrigated  2-3       2-4       0.16-0.26   0.93-0.98   0.08-0.15       30-100
+#   urban                0-1       0.1-2     0.05-0.40   0.85-0.98   5-20 (buildings) 1 (near-sealed, see below)
+#
+# Albedo and emissivity are the midpoints of the ranges for the land cover (evergreen 0.05-0.15 / 0.97-0.99,
+# deciduous 0.15-0.20 / 0.97-0.99, grass and cropland 0.16-0.26 / 0.93-0.98; urban: mean of asphalt 0.05-0.20 /
+# 0.90-0.98, concrete 0.25-0.40 / 0.85-0.95 and roofs 0.08-0.35 / 0.90-0.95). They are static (no seasonal
+# or snow albedo).
+# Sources of the ranges: LAI after Asner et al. (2003) and Breuer et al. (2003); crop heights and root depths
+# after FAO-56 (Allen et al. 1998, tables 12 and 22); grassland root depth after KA5 (arable value minus 2 dm
+# or halved); spruce and beech root systems after forest-hydrology practice. Typical values, not site data.
+#
 # '-' = not given. What is needed follows from the components of the land use:
 #   max_lai = 0          no canopy: icept_* not needed (ignored with a note)
 #   min_lai = max_lai    constant LAI: the four phenology dates are not needed
@@ -24,16 +48,17 @@
 #   icept_drain_max         maximum drainage rate of the interception store                           mm/day
 # surface (PM)
 #   albedo, emissivity      of the surface                                                            -
-#   veg_height              vegetation height, sets the roughness                                     m
+#   veg_height              vegetation height, sets the roughness (static, also outside the season)   m
 #
-# LAI, degree-day, direct runoff and litter capacity from the original SIMPEL land-use table (Hoermann);
-# interception, root depth and litter drying factor as in the SIMPEL examples.
-land_use        min_lai  max_lai  green_up_start  green_up_end  senescence_start  senescence_end  root_depth  degree_day  direct_runoff  litter_cap  litter_reduction  icept_cap_per_lai  icept_drain_b  icept_drain_max  albedo  emissivity  veg_height
-beech           2.50     6.00     -               -             -                 -               100         2.40        0              1.50        3                 0.35               3.7            2.88             -       -           -
-corn            0.50     3.00     -               -             -                 -               100         3.00        20             0.00        -                 0.35               3.7            2.88             -       -           -
-grassland       1.00     2.00     -               -             -                 -               100         3.00        15             0.00        -                 0.35               3.7            2.88             -       -           -
-spruce          7.00     7.00     -               -             -                 -               100         1.80        0              2.00        3                 0.35               3.7            2.88             -       -           -
-sugar_beet      0.50     3.00     -               -             -                 -               100         3.00        20             0.00        -                 0.35               3.7            2.88             -       -           -
-urban           0.10     0.50     -               -             -                 -               1           5.00        50             0.00        -                 0.35               3.7            2.88             -       -           -
-winter_wheat    0.50     3.00     -               -             -                 -               100         3.00        20             0.00        -                 0.35               3.7            2.88             -       -           -
-irrigated_grass 2.00     2.00     -               -             -                 -               100         3.00        15             0.00        -                 0.35               3.7            2.88             0.18    0.98        0.12
+# Degree-day, direct runoff and litter capacity from the original SIMPEL land-use table (Hoermann);
+# interception and litter drying factor as in the SIMPEL examples. Haude coefficients: haude.txt (the rows
+# forest_deciduous and forest_evergreen use the SIMPEL values for beech and spruce).
+land_use            min_lai  max_lai  green_up_start  green_up_end  senescence_start  senescence_end  root_depth  degree_day  direct_runoff  litter_cap  litter_reduction  icept_cap_per_lai  icept_drain_b  icept_drain_max  albedo  emissivity  veg_height
+forest_deciduous    1.00     6.00     -               -             -                 -               140         2.40        0              1.50        3                 0.35               3.7            2.88             0.175   0.98        25
+forest_evergreen    7.00     7.00     -               -             -                 -               100         1.80        0              2.00        3                 0.35               3.7            2.88             0.10    0.98        25
+crop_maize          0.00     4.00     -               -             -                 -               100         3.00        20             0.00        -                 0.35               3.7            2.88             0.21    0.955       2.0
+crop_sugarbeet      0.00     4.50     -               -             -                 -               100         3.00        20             0.00        -                 0.35               3.7            2.88             0.21    0.955       0.5
+crop_winterwheat    0.50     5.50     -               -             -                 -               120         3.00        20             0.00        -                 0.35               3.7            2.88             0.21    0.955       1.0
+grassland           1.00     4.00     -               -             -                 -               60          3.00        15             0.00        -                 0.35               3.7            2.88             0.21    0.955       0.3
+grassland_irrigated 2.88     2.88     -               -             -                 -               50          3.00        15             0.00        -                 0.35               3.7            2.88             0.21    0.955       0.12
+urban               0.10     0.50     -               -             -                 -               1           5.00        50             0.00        -                 0.35               3.7            2.88             0.22    0.92        10

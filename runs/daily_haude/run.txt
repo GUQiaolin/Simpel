@@ -18,6 +18,7 @@ land_use_fraction = 0.75      # share covered by the land use, the rest is bare 
 init_soil   = 20              # vol-% (default: field capacity)
 init_litter = 0               # mm
 
-# overrides of single table values, e.g.
-# soil.field_capacity = 30
-# land_use.max_lai    = 3
+# overrides of single table values: the values of the original SIMPEL example (remove them to use the
+# table values of grassland)
+land_use.max_lai    = 2
+land_use.root_depth = 100
