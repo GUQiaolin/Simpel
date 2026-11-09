@@ -1,0 +1,15 @@
+# Surface conductance parameters of the PM method (Jarvi et al. 2011, gsModel 1), one row per land use.
+# Only read for et_method = PM; needed for every land use with leaves (max_lai > 0). Override in run.txt
+# with e.g. pm.G1 = 10. The Jarvi et al. (2011) values are from urban sites; recalibrate for other vegetation.
+#
+#   G1    maximum surface conductance                                  mm s-1
+#   G2    Kdown dependence                                             W m-2
+#   G3    humidity dependence slope                                    (g kg-1)-1
+#   G4    humidity deficit threshold                                   g kg-1
+#   G5    optimum temperature                                          degC
+#   G6    soil moisture dependence                                     mm-1
+#   TH    upper temperature limit                                      degC
+#   TL    lower temperature limit                                      degC
+#   Kmax  maximum Kdown                                                W m-2
+land_use        G1       G2        G3      G4      G5       G6      TH  TL  Kmax
+irrigated_grass 16.4764  566.0923  0.2163  3.3649  11.0764  0.0176  40  0   1200

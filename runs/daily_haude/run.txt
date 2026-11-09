@@ -1,0 +1,23 @@
+# SIMPEL run: daily, Haude method (original example, 1995, Central Europe).
+# Paths are relative to this file; results go to output_<yyyyMMdd_HHmmss>/ next to it.
+
+# inputs
+forcing    = ../../forcing/simpel_1995_daily.txt
+parameters = ../../parameters
+
+# what is simulated
+soil      = simpel_example    # row of soil.txt (default luvisol)
+land_use  = grassland         # row of land_use.txt
+et_method = HAUDE             # HAUDE, PM or ET0 (ET0 column of the forcing)
+
+# site
+hemisphere        = N         # N or S; S shifts the phenology dates and Haude months by half a year
+land_use_fraction = 0.75      # share covered by the land use, the rest is bare soil (default 1)
+
+# initial state
+init_soil   = 20              # vol-% (default: field capacity)
+init_litter = 0               # mm
+
+# overrides of single table values, e.g.
+# soil.field_capacity = 30
+# land_use.max_lai    = 3

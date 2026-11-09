@@ -1,6 +1,7 @@
-# Monthly Haude coefficients (mm per hPa per day), one row per land use. Only used by ET method HAUDE.
-# Values from the original SIMPEL land-use table, for Central Europe (northern hemisphere).
-Land_use      Jan   Feb   Mar   Apr   May   Jun   Jul   Aug   Sep   Oct   Nov   Dec 
+# Monthly Haude coefficients (mm per hPa per day), one row per land use. Only read for et_method = HAUDE.
+# Values from the original SIMPEL land-use table, for Central Europe (northern hemisphere; with
+# hemisphere = S the month half a year later is used). Override in run.txt with e.g. haude.Jul = 0.30
+land_use      Jan   Feb   Mar   Apr   May   Jun   Jul   Aug   Sep   Oct   Nov   Dec 
 beech         0.10  0.10  0.10  0.10  0.23  0.28  0.32  0.26  0.17  0.10  0.10  0.10
 corn          0.11  0.11  0.11  0.17  0.21  0.24  0.25  0.26  0.21  0.18  0.11  0.11
 grassland     0.20  0.21  0.21  0.29  0.29  0.28  0.26  0.25  0.23  0.22  0.20  0.20

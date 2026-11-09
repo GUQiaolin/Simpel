@@ -14,11 +14,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Meteorological forcing from Global_Input.txt, read and checked once.
+ * Meteorological forcing, read and checked once. The file is named in run.txt (key forcing).
  *
  * Columns are matched by their header name (see COLUMNS for names, aliases, units and allowed ranges).
  * The day of year and the month always come from the Date column (there is no DOY column; an old DOY
- * column is ignored with a warning, like any unknown column).
+ * column is ignored with a warning, like any unknown column). Dates are dd.mm.yyyy (daily) or dd.mm.yyyy.hh,
+ * or ISO 8601: yyyy-mm-dd or yyyy-mm-ddThh:mm.
  * Every value is parsed once into a named array; a missing value marker (empty, NA, NaN, -999), a value
  * that is not a number or a value outside the plausible range stops the run with the row and column named.
  * Optional columns that are absent are null.
@@ -83,7 +84,7 @@ public class Forcing
 	public final double[] netRadiation;      // W m-2, null if absent
 	public final double[] et0;               // mm per step, null if absent
 
-	private Forcing(String[] dateLabels, Map<Column, double[]> values)
+	private Forcing(String fileName, String[] dateLabels, Map<Column, double[]> values)
 	{
 		this.dateLabels = dateLabels;
 		this.dates = new LocalDateTime[dateLabels.length];
@@ -95,11 +96,11 @@ public class Forcing
 			}
 			catch (RuntimeException e)
 			{
-				throw new IllegalArgumentException("Global_Input.txt row " + (i + 2) + ": cannot read date '" + dateLabels[i]
-						+ "', expected dd.mm.yyyy or dd.mm.yyyy.hh");
+				throw new IllegalArgumentException(fileName + " row " + (i + 2) + ": cannot read date '" + dateLabels[i]
+						+ "', expected dd.mm.yyyy, dd.mm.yyyy.hh, yyyy-mm-dd or yyyy-mm-ddThh:mm");
 			}
 		}
-		this.timestepHours = timestepHours(dates, dateLabels.length > 0 ? dateLabels[0] : "");
+		this.timestepHours = timestepHours(fileName, dates, dateLabels.length > 0 ? dateLabels[0] : "");
 		this.precipitation = values.get(PRECIPITATION);
 		this.airTemperature = values.get(AIR_TEMPERATURE);
 		this.relativeHumidity = values.get(RELATIVE_HUMIDITY);
@@ -123,9 +124,14 @@ public class Forcing
 	public boolean hasNetRadiation() { return netRadiation != null; }
 	public boolean hasEt0() { return et0 != null; }
 
-	/** Reads and checks Global_Input.txt. */
+	/** Reads and checks a forcing file. */
 	public static Forcing read(Path file) throws IOException
 	{
+		if (!Files.isRegularFile(file))
+		{
+			throw new IllegalArgumentException("Forcing file " + file + " not found (key forcing in run.txt)");
+		}
+		String fileName = file.getFileName().toString();
 		List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
 		List<String[]> rows = new ArrayList<String[]>();
 		List<Integer> lineNumbers = new ArrayList<Integer>();
@@ -167,12 +173,12 @@ public class Forcing
 			}
 			if (column == null)
 			{
-				System.out.println("Warning: ignoring unknown column '" + name + "' in Global_Input.txt");
+				System.out.println("Warning: ignoring unknown column '" + name + "' in " + fileName);
 				continue;
 			}
 			if (columnIndex.containsKey(column))
 			{
-				throw new IllegalArgumentException("Global_Input.txt has the column " + column.name
+				throw new IllegalArgumentException(fileName + " has the column " + column.name
 						+ " twice (also accepted as " + String.join(", ", column.aliases) + ")");
 			}
 			columnIndex.put(column, i);
@@ -180,7 +186,7 @@ public class Forcing
 		if (dateColumn < 0 || !columnIndex.containsKey(PRECIPITATION) || !columnIndex.containsKey(AIR_TEMPERATURE)
 				|| !columnIndex.containsKey(RELATIVE_HUMIDITY))
 		{
-			throw new IllegalArgumentException("Global_Input.txt must have the columns Date, P, T14 (or Ta) and RF14 (or RH)");
+			throw new IllegalArgumentException(fileName + " must have the columns Date, P, T14 (or Ta) and RF14 (or RH)");
 		}
 
 		String[] dateLabels = new String[rows.size()];
@@ -194,27 +200,27 @@ public class Forcing
 			String[] fields = rows.get(r);
 			if (fields.length < header.length)
 			{
-				throw new IllegalArgumentException("Global_Input.txt line " + lineNumbers.get(r) + " has " + fields.length
+				throw new IllegalArgumentException(fileName + " line " + lineNumbers.get(r) + " has " + fields.length
 						+ " values, the header has " + header.length + " columns");
 			}
 			dateLabels[r] = fields[dateColumn].trim();
 			for (Map.Entry<Column, Integer> entry : columnIndex.entrySet())
 			{
 				Column column = entry.getKey();
-				values.get(column)[r] = parseValue(fields[entry.getValue()], column, lineNumbers.get(r), dateLabels[r]);
+				values.get(column)[r] = parseValue(fileName, fields[entry.getValue()], column, lineNumbers.get(r), dateLabels[r]);
 			}
 		}
-		return new Forcing(dateLabels, values);
+		return new Forcing(fileName, dateLabels, values);
 	}
 
-	static double parseValue(String text, Column column, int lineNumber, String date)
+	static double parseValue(String fileName, String text, Column column, int lineNumber, String date)
 	{
 		String trimmed = text.trim();
 		for (String marker : MISSING_VALUE_MARKERS)
 		{
 			if (trimmed.equals(marker))
 			{
-				throw new IllegalArgumentException("Global_Input.txt line " + lineNumber + " (" + date + "): missing value '"
+				throw new IllegalArgumentException(fileName + " line " + lineNumber + " (" + date + "): missing value '"
 						+ trimmed + "' in column " + column.name + "; fill the gap before running");
 			}
 		}
@@ -225,12 +231,12 @@ public class Forcing
 		}
 		catch (NumberFormatException e)
 		{
-			throw new IllegalArgumentException("Global_Input.txt line " + lineNumber + " (" + date + "): '" + trimmed
+			throw new IllegalArgumentException(fileName + " line " + lineNumber + " (" + date + "): '" + trimmed
 					+ "' in column " + column.name + " is not a number");
 		}
 		if (value < column.min || value > column.max)
 		{
-			throw new IllegalArgumentException("Global_Input.txt line " + lineNumber + " (" + date + "): " + column.name
+			throw new IllegalArgumentException(fileName + " line " + lineNumber + " (" + date + "): " + column.name
 					+ " = " + value + " " + column.unit + " is outside the plausible range " + column.min + " to "
 					+ column.max + " " + column.unit);
 		}
@@ -240,10 +246,18 @@ public class Forcing
 	static final DateTimeFormatter DAILY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy");
 	static final DateTimeFormatter HOURLY_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy.HH");
 
-	/** Parses dd.mm.yyyy (start of the day) or dd.mm.yyyy.hh. */
+	/** Parses dd.mm.yyyy or yyyy-mm-dd (start of the day), dd.mm.yyyy.hh or yyyy-mm-ddThh:mm. */
 	static LocalDateTime parseDate(String date)
 	{
 		String trimmed = date.trim();
+		if (isIsoDay(trimmed))
+		{
+			return LocalDate.parse(trimmed).atStartOfDay();
+		}
+		if (trimmed.contains("T"))
+		{
+			return LocalDateTime.parse(trimmed);
+		}
 		if (trimmed.split("\\.").length == 3)
 		{
 			return LocalDate.parse(trimmed, DAILY_DATE).atStartOfDay();
@@ -255,9 +269,9 @@ public class Forcing
 	 * Time step in hours from the dates: daily dates (dd.mm.yyyy) give 24 h, otherwise the spacing of the
 	 * rows. The spacing must be constant and divide a day evenly (1, 2, 3, 4, 6, 8, 12 or 24 h).
 	 */
-	static double timestepHours(LocalDateTime[] dates, String firstDate)
+	static double timestepHours(String fileName, LocalDateTime[] dates, String firstDate)
 	{
-		boolean dailyFormat = firstDate.trim().split("\\.").length == 3;
+		boolean dailyFormat = firstDate.trim().split("\\.").length == 3 || isIsoDay(firstDate.trim());
 		if (dates.length < 2)
 		{
 			return dailyFormat ? 24. : 1.;
@@ -268,7 +282,7 @@ public class Forcing
 			long minutes = Duration.between(dates[i - 1], dates[i]).toMinutes();
 			if (minutes != stepMinutes)
 			{
-				throw new IllegalArgumentException("Global_Input.txt rows are not evenly spaced: " + dates[i - 1]
+				throw new IllegalArgumentException(fileName + " rows are not evenly spaced: " + dates[i - 1]
 						+ " to " + dates[i] + " is " + minutes + " min, expected " + stepMinutes + " min");
 			}
 		}
@@ -278,8 +292,14 @@ public class Forcing
 		}
 		if (dailyFormat && stepMinutes != 24 * 60)
 		{
-			throw new IllegalArgumentException("Daily dates (dd.mm.yyyy) must be consecutive days");
+			throw new IllegalArgumentException("Daily dates (dd.mm.yyyy or yyyy-mm-dd) must be consecutive days");
 		}
 		return stepMinutes / 60.;
+	}
+
+	/** yyyy-mm-dd without a time. */
+	static boolean isIsoDay(String date)
+	{
+		return date.matches("\\d{4}-\\d{2}-\\d{2}");
 	}
 }

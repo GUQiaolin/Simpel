@@ -1,0 +1,19 @@
+# Soil properties, one row per soil. The soil of a run is chosen with 'soil = <name>' in run.txt
+# (default luvisol); single values can be overridden there, e.g. soil.field_capacity = 34.
+# Water contents are in vol-%; the root depth of the land use turns them into mm (vol-% x cm / 10).
+# '-' = not given. See GLOSSARY.md for the meaning, ranges and sources of every column.
+#
+# field_capacity            water content at field capacity (pF 1.8), upper limit of the soil store   vol-%
+# wilting_point             permanent wilting point (pF 4.2), below it plants take up no water         vol-%
+# start_of_reduction        below it ET is reduced linearly to 0 at the wilting point                  vol-%
+#                           (needed for HAUDE and ET0, not used by PM)
+# glugla_c                  coefficient c of the Glugla seepage law, lambda = c / (root depth in mm)^2  -
+# infiltration_fraction     share of the soil deficit (FC - storage) that can infiltrate per day        1/day
+# soil_surface_conductance  conductance of the bare soil surface at field capacity (PM only)          mm s-1
+#
+# luvisol         Parabraunerde from loess, profile mean of an Ut3 topsoil over an Lu subsoil (Bt),
+#                 medium bulk density, after KA5 (AG Boden 2005, table 70); default soil
+# simpel_example  soil of the original SIMPEL example (used by the example runs)
+soil            field_capacity  wilting_point  start_of_reduction  glugla_c  infiltration_fraction  soil_surface_conductance
+luvisol         36              16             28                  150       0.25                   5
+simpel_example  25              12             20                  150       0.25                   5
